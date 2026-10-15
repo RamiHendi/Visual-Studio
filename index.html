@@ -127,38 +127,38 @@
       </a>
 
       <!-- Center View Switcher Tabs -->
-      <nav class="hidden md:flex items-center bg-charcoal/90 p-1.5 rounded-xl border border-white/10">
-        <button id="nav-tab-portfolio" onclick="switchMainTab('portfolio')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 bg-amber-500 text-black font-semibold shadow-md shadow-amber-500/20">
+      <nav  hidden class="hidden md:flex items-center bg-charcoal/90 p-1.5 rounded-xl border border-white/10">
+        <button hidden id="nav-tab-portfolio" onclick="switchMainTab('portfolio')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 bg-amber-500 text-black font-semibold shadow-md shadow-amber-500/20">
           <i class="fa-solid fa-cubes"></i>
           <span>Studio Showcase</span>
         </button>
-        <button id="nav-tab-cv" onclick="switchMainTab('cv')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white transition-all flex items-center gap-2">
+        <button hidden id="nav-tab-cv" onclick="switchMainTab('cv')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white transition-all flex items-center gap-2">
           <i class="fa-solid fa-file-lines"></i>
           <span>Interactive CV</span>
         </button>
-        <button id="nav-tab-cms" onclick="switchMainTab('cms')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white transition-all flex items-center gap-2">
+        <button hidden id="nav-tab-cms" onclick="switchMainTab('cms')" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white transition-all flex items-center gap-2">
           <i class="fa-brands fa-google-drive"></i>
           <span>CMS Connection</span>
         </button>
       </nav>
 
       <!-- Right Actions: Sync Status Pill & Live CV PDF Download -->
-      <div class="flex items-center gap-2.5 sm:gap-3">
+      <div hidden class="flex items-center gap-2.5 sm:gap-3">
         <!-- Data Source Status Pill -->
-        <button onclick="openConnectModal()" id="sync-status-pill" title="Click to configure Google Drive CMS link" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-all">
+        <button hidden onclick="openConnectModal()" id="sync-status-pill" title="Click to configure Google Drive CMS link" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-all">
           <span id="sync-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
           <span id="sync-status-text">Demo Studio Mode</span>
           <i class="fa-solid fa-sliders text-[10px] opacity-75 ml-0.5"></i>
         </button>
 
         <!-- Force Refresh Button -->
-        <button onclick="refreshDriveData()" title="Force Refresh from Google Drive" class="p-2.5 rounded-xl bg-charcoal hover:bg-panel text-gray-300 hover:text-amber-400 border border-white/10 transition-all">
+        <button hidden onclick="refreshDriveData()" title="Force Refresh from Google Drive" class="p-2.5 rounded-xl bg-charcoal hover:bg-panel text-gray-300 hover:text-amber-400 border border-white/10 transition-all">
           <i id="refresh-icon" class="fa-solid fa-arrows-rotate text-sm"></i>
         </button>
 
         <!-- Live Download CV PDF Button -->
-        <a id="download-cv-btn" href="#cv" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-lg shadow-amber-500/20 transition-all">
-          <i class="fa-solid fa-file-arrow-down"></i>
+        <a hidden id="download-cv-btn" href="#cv" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-lg shadow-amber-500/20 transition-all">
+          <i hidden class="fa-solid fa-file-arrow-down"></i>
           <span class="hidden sm:inline">Download CV</span>
           <span class="sm:hidden">CV</span>
         </a>
