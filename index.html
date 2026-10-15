@@ -127,7 +127,7 @@
       </a>
 
       <!-- Center View Switcher Tabs -->
-      <nav  hidden class="hidden md:flex items-center bg-charcoal/90 p-1.5 rounded-xl border border-white/10">
+      <nav class="hidden md:flex items-center bg-charcoal/90 p-1.5 rounded-xl border border-white/10">
         <button hidden id="nav-tab-portfolio" onclick="switchMainTab('portfolio')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 bg-amber-500 text-black font-semibold shadow-md shadow-amber-500/20">
           <i class="fa-solid fa-cubes"></i>
           <span>Studio Showcase</span>
@@ -143,7 +143,7 @@
       </nav>
 
       <!-- Right Actions: Sync Status Pill & Live CV PDF Download -->
-      <div hidden class="flex items-center gap-2.5 sm:gap-3">
+      <div class="flex items-center gap-2.5 sm:gap-3">
         <!-- Data Source Status Pill -->
         <button hidden onclick="openConnectModal()" id="sync-status-pill" title="Click to configure Google Drive CMS link" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-all">
           <span id="sync-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
@@ -157,7 +157,7 @@
         </button>
 
         <!-- Live Download CV PDF Button -->
-        <a hidden id="download-cv-btn" href="#cv" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-lg shadow-amber-500/20 transition-all">
+        <a id="download-cv-btn" href="#cv" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 px-3.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-lg shadow-amber-500/20 transition-all">
           <i hidden class="fa-solid fa-file-arrow-down"></i>
           <span class="hidden sm:inline">Download CV</span>
           <span class="sm:hidden">CV</span>
