@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --color-obsidian: #090A0F;
+  --color-charcoal: #12151E;
+  --color-panel: #181C28;
+  --color-amberGlow: #F59E0B;
+  --color-cyanRim: #06B6D4;
+
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  background-color: #090A0F;
+  color: #F3F4F6;
+  overflow-x: hidden;
+}
+
+.studio-grid-bg {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.studio-radial-glow {
+  background: radial-gradient(circle at 20% 15%, rgba(245, 158, 11, 0.12), transparent 45%),
+              radial-gradient(circle at 80% 25%, rgba(6, 182, 212, 0.10), transparent 50%);
+}
+
+/* Masonry Layout Support */
+.masonry-grid {
+  column-count: 1;
+  column-gap: 1.5rem;
+}
+@media (min-width: 640px) {
+  .masonry-grid { column-count: 2; }
+}
+@media (min-width: 1024px) {
+  .masonry-grid { column-count: 3; }
+}
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: 1.5rem;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #090A0F;
+}
+::-webkit-scrollbar-thumb {
+  background: #262B3D;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #F59E0B;
+}
+
+/* Smooth Lightbox Zoom */
+.lightbox-img-zoomed {
+  transform: scale(1.65);
+  cursor: zoom-out;
+}
+.lightbox-img-normal {
+  transform: scale(1);
+  cursor: zoom-in;
+}
+
+/* Utility to hide scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

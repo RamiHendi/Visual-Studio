@@ -1,0 +1,8 @@
+{
+  "name": "Rami Hendi's Visual Studio",
+  "description": "Architectural Visualization, 3D Design, and Technical Art portfolio with live Google Drive CMS sync and interactive CV.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
