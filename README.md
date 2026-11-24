@@ -19,9 +19,6 @@ A modern React & Vite application for **Rami Hendi's Visual Studio**, showcasing
   - Local caching with sessionStorage for instant loads.
   - Complete Google Apps Script template code with one-click copy and folder hierarchy blueprint.
 
-- **4K Lightbox & Video Theater**:
-  - High-resolution modal with smooth 4K zoom (1.65x), aspect-ratio preserving video embeds, external links, previous/next buttons, and keyboard controls (Arrow keys, Esc).
-
 ## Tech Stack
 
 - **React 19** with **TypeScript**
