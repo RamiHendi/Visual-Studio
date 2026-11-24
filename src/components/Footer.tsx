@@ -46,10 +46,10 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
             Interactive CV
           </button>
           <a
-            href="mailto:RHHendy@gmail.com"
+            href="mailto:rhhendy@gmail.com"
             className="text-zinc-400 hover:text-brass transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            RHHendy@gmail.com
+            rhhendy@gmail.com
           </a>
         </div>
       </div>

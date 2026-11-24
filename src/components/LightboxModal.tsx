@@ -1,7 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PortfolioItem } from '../types';
 
 type SlideDirection = 'next' | 'prev' | 'fade';
+
+interface ActiveSlide {
+  item: PortfolioItem;
+  index: number;
+  projectTitle: string;
+  src: string;
+  key: number;
+  direction: SlideDirection;
+}
 
 interface LightboxModalProps {
   isOpen: boolean;
@@ -18,6 +27,8 @@ interface LightboxModalProps {
   onNavigate: (newIndex: number) => void;
 }
 
+const EXIT_ANIMATION_MS = 480;
+
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   isOpen,
   itemIndex,
@@ -33,44 +44,268 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   onNavigate,
 }) => {
   const [isZoomed, setIsZoomed] = useState<boolean>(false);
-  const [slideDirection, setSlideDirection] = useState<SlideDirection>('fade');
+  const [displayedSlide, setDisplayedSlide] = useState<ActiveSlide | null>(null);
+  const [exitingSlide, setExitingSlide] = useState<ActiveSlide | null>(null);
+  const [isTransitioningImage, setIsTransitioningImage] = useState<boolean>(false);
+
+  const displayedSlideRef = useRef<ActiveSlide | null>(null);
   const prevItemsRef = useRef<PortfolioItem[]>(items);
+  const pendingDirectionRef = useRef<SlideDirection>('fade');
+  const transitionCounterRef = useRef<number>(0);
+  const loadRequestIdRef = useRef<number>(0);
+  const exitTimerRef = useRef<number | null>(null);
+  const preloadedCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const inFlightLoadsRef = useRef<Map<string, Promise<string>>>(new Map());
 
   const currentItem = items[itemIndex];
+  const activeProjectTitle = (projectTitle || currentItem?.projectName || '').trim();
 
-  // Reset zoom on item or project change; use gentle fade when switching projects
-  useEffect(() => {
-    setIsZoomed(false);
-    if (prevItemsRef.current !== items) {
-      prevItemsRef.current = items;
-      setSlideDirection('fade');
+  // Keep decoded image bitmaps warm in memory so transitions start with 0ms decode delay
+  const loadAndDecodeUrl = useCallback((url: string): Promise<string> => {
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return Promise.resolve('');
+
+    const cached = preloadedCacheRef.current.get(cleanUrl);
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      return Promise.resolve(cleanUrl);
     }
-  }, [itemIndex, items]);
 
-  // Reset to gentle fade each time the modal opens
+    const existingPromise = inFlightLoadsRef.current.get(cleanUrl);
+    if (existingPromise) return existingPromise;
+
+    const promise = new Promise<string>((resolve) => {
+      const img = new Image();
+      img.referrerPolicy = 'no-referrer';
+      img.decoding = 'async';
+
+      const finishSuccess = () => {
+        preloadedCacheRef.current.set(cleanUrl, img);
+        inFlightLoadsRef.current.delete(cleanUrl);
+        resolve(cleanUrl);
+      };
+
+      const finishError = () => {
+        inFlightLoadsRef.current.delete(cleanUrl);
+        resolve('');
+      };
+
+      img.onload = () => {
+        if (typeof img.decode === 'function') {
+          img.decode().then(finishSuccess, finishSuccess);
+        } else {
+          finishSuccess();
+        }
+      };
+      img.onerror = finishError;
+      img.src = cleanUrl;
+    });
+
+    inFlightLoadsRef.current.set(cleanUrl, promise);
+    return promise;
+  }, []);
+
+  const getCachedImageSrc = useCallback((item: PortfolioItem): string | null => {
+    const primary = (item.fullUrl || item.thumbUrl || '').trim();
+    const fallback = (item.thumbUrl || '').trim();
+
+    if (primary) {
+      const cachedPrimary = preloadedCacheRef.current.get(primary);
+      if (cachedPrimary && cachedPrimary.complete && cachedPrimary.naturalWidth > 0) {
+        return primary;
+      }
+    }
+    if (fallback && fallback !== primary) {
+      const cachedFallback = preloadedCacheRef.current.get(fallback);
+      if (cachedFallback && cachedFallback.complete && cachedFallback.naturalWidth > 0) {
+        return fallback;
+      }
+    }
+    return null;
+  }, []);
+
+  const resolveImageSrc = useCallback(
+    async (item: PortfolioItem): Promise<string> => {
+      const primary = (item.fullUrl || item.thumbUrl || '').trim();
+      const fallback = (item.thumbUrl || '').trim();
+
+      if (primary) {
+        const primaryLoaded = await loadAndDecodeUrl(primary);
+        if (primaryLoaded) return primaryLoaded;
+      }
+      if (fallback && fallback !== primary) {
+        const fallbackLoaded = await loadAndDecodeUrl(fallback);
+        if (fallbackLoaded) return fallbackLoaded;
+      }
+      return primary || fallback;
+    },
+    [loadAndDecodeUrl]
+  );
+
+  // Reset state cleanly when modal closes
   useEffect(() => {
-    if (isOpen) {
-      setSlideDirection('fade');
+    if (!isOpen) {
+      loadRequestIdRef.current += 1;
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+      displayedSlideRef.current = null;
+      setDisplayedSlide(null);
+      setExitingSlide(null);
+      setIsTransitioningImage(false);
+      setIsZoomed(false);
+      pendingDirectionRef.current = 'fade';
     }
   }, [isOpen]);
 
-  // Preload adjacent project images for instant, smooth transitions
+  // Cleanup exit timer on unmount
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Preload & decode project images in priority order (adjacent first, then rest of project)
   useEffect(() => {
     if (!isOpen || items.length <= 1) return;
-    const neighborIndices = [
-      (itemIndex + 1) % items.length,
-      (itemIndex - 1 + items.length) % items.length,
-    ];
-    neighborIndices.forEach((idx) => {
-      const neighbor = items[idx];
-      if (!neighbor || neighbor.type === 'video') return;
-      const preloadUrl = (neighbor.fullUrl || neighbor.thumbUrl || '').trim();
-      if (!preloadUrl) return;
-      const img = new Image();
-      img.referrerPolicy = 'no-referrer';
-      img.src = preloadUrl;
+
+    const orderedIndices: number[] = [];
+    const seen = new Set<number>([itemIndex]);
+
+    for (let offset = 1; offset < items.length; offset++) {
+      const nextIdx = (itemIndex + offset) % items.length;
+      if (!seen.has(nextIdx)) {
+        seen.add(nextIdx);
+        orderedIndices.push(nextIdx);
+      }
+      const prevIdx = (itemIndex - offset + items.length) % items.length;
+      if (!seen.has(prevIdx)) {
+        seen.add(prevIdx);
+        orderedIndices.push(prevIdx);
+      }
+    }
+
+    let cancelled = false;
+    const warmQueue = async () => {
+      // Preload immediate neighbors in parallel first for instant responsiveness
+      const immediate = orderedIndices.slice(0, 2);
+      await Promise.all(
+        immediate.map((idx) => {
+          const item = items[idx];
+          if (!item || item.type === 'video') return Promise.resolve('');
+          const url = (item.fullUrl || item.thumbUrl || '').trim();
+          return url ? loadAndDecodeUrl(url) : Promise.resolve('');
+        })
+      );
+
+      // Then gently warm remaining images in the active project sequentially
+      for (let i = 2; i < orderedIndices.length; i++) {
+        if (cancelled) return;
+        const item = items[orderedIndices[i]];
+        if (!item || item.type === 'video') continue;
+        const url = (item.fullUrl || item.thumbUrl || '').trim();
+        if (url) {
+          await loadAndDecodeUrl(url);
+        }
+      }
+    };
+
+    warmQueue();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, itemIndex, items, loadAndDecodeUrl]);
+
+  // Synchronize slide transitions: decode before swapping so outgoing & incoming glide simultaneously with zero flash
+  useEffect(() => {
+    if (!isOpen || !currentItem) return;
+
+    const isProjectSwitch = prevItemsRef.current !== items;
+    if (isProjectSwitch) {
+      prevItemsRef.current = items;
+    }
+
+    const currentDisplayed = displayedSlideRef.current;
+    if (
+      currentDisplayed &&
+      currentDisplayed.item === currentItem &&
+      currentDisplayed.index === itemIndex &&
+      currentDisplayed.projectTitle === activeProjectTitle
+    ) {
+      return;
+    }
+
+    const direction: SlideDirection =
+      !currentDisplayed || isProjectSwitch
+        ? 'fade'
+        : pendingDirectionRef.current;
+
+    const requestId = ++loadRequestIdRef.current;
+
+    const commitSlide = (resolvedSrc: string) => {
+      if (requestId !== loadRequestIdRef.current) return;
+
+      setIsTransitioningImage(false);
+      setIsZoomed(false);
+
+      const previous = displayedSlideRef.current;
+      const nextSlide: ActiveSlide = {
+        item: currentItem,
+        index: itemIndex,
+        projectTitle: activeProjectTitle,
+        src: resolvedSrc,
+        key: ++transitionCounterRef.current,
+        direction,
+      };
+
+      if (previous) {
+        if (exitTimerRef.current !== null) {
+          window.clearTimeout(exitTimerRef.current);
+        }
+        setExitingSlide({
+          ...previous,
+          direction,
+        });
+        exitTimerRef.current = window.setTimeout(() => {
+          setExitingSlide(null);
+          exitTimerRef.current = null;
+        }, EXIT_ANIMATION_MS);
+      } else {
+        setExitingSlide(null);
+      }
+
+      displayedSlideRef.current = nextSlide;
+      setDisplayedSlide(nextSlide);
+    };
+
+    if (currentItem.type === 'video') {
+      commitSlide((currentItem.embedUrl || '').trim());
+      return;
+    }
+
+    // Fast synchronous path if image is already decoded in memory
+    const cachedSrc = getCachedImageSrc(currentItem);
+    if (cachedSrc) {
+      commitSlide(cachedSrc);
+      return;
+    }
+
+    // Otherwise keep the current slide rock-solid while decoding the incoming image
+    setIsTransitioningImage(true);
+    resolveImageSrc(currentItem).then((resolvedSrc) => {
+      commitSlide(resolvedSrc);
     });
-  }, [isOpen, itemIndex, items]);
+  }, [
+    isOpen,
+    currentItem,
+    itemIndex,
+    items,
+    activeProjectTitle,
+    getCachedImageSrc,
+    resolveImageSrc,
+  ]);
 
   // Keyboard navigation, silent Ctrl/Cmd+S guard & body scroll lock
   useEffect(() => {
@@ -86,11 +321,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       }
       if (e.key === 'Escape') {
         onClose();
-      } else if (e.key === 'ArrowRight') {
-        setSlideDirection('next');
+      } else if (e.key === 'ArrowRight' && items.length > 1) {
+        pendingDirectionRef.current = 'next';
         onNavigate((itemIndex + 1) % items.length);
-      } else if (e.key === 'ArrowLeft') {
-        setSlideDirection('prev');
+      } else if (e.key === 'ArrowLeft' && items.length > 1) {
+        pendingDirectionRef.current = 'prev';
         onNavigate((itemIndex - 1 + items.length) % items.length);
       }
     };
@@ -106,42 +341,137 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   const isVideo = currentItem.type === 'video';
   const categoryLabel = (currentItem.category || 'Selected Work').replace(/_/g, ' ');
-  const activeProjectTitle = (projectTitle || currentItem.projectName || '').trim();
   const paddedIndex = String(itemIndex + 1).padStart(2, '0');
   const paddedTotal = String(items.length).padStart(2, '0');
-  const videoEmbedUrl = (currentItem.embedUrl || '').trim();
-  const imageDisplayUrl = (currentItem.fullUrl || currentItem.thumbUrl || '').trim();
   const showFilmstrip = Boolean(activeProjectTitle && items.length > 1);
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setSlideDirection('prev');
+    pendingDirectionRef.current = 'prev';
     onNavigate((itemIndex - 1 + items.length) % items.length);
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setSlideDirection('next');
+    pendingDirectionRef.current = 'next';
     onNavigate((itemIndex + 1) % items.length);
   };
 
   const handleFilmstripSelect = (targetIdx: number) => {
     if (targetIdx === itemIndex) return;
-    setSlideDirection(targetIdx > itemIndex ? 'next' : 'prev');
+    pendingDirectionRef.current = targetIdx > itemIndex ? 'next' : 'prev';
     onNavigate(targetIdx);
   };
 
-  const transitionClass =
-    slideDirection === 'next'
-      ? 'lightbox-slide-next'
-      : slideDirection === 'prev'
-        ? 'lightbox-slide-prev'
-        : 'lightbox-slide-fade';
+  const handlePrevProjectClick = () => {
+    pendingDirectionRef.current = 'fade';
+    onPrevProject?.();
+  };
 
-  const stageKey = `${activeProjectTitle}::${currentItem.id || itemIndex}`;
+  const handleNextProjectClick = () => {
+    pendingDirectionRef.current = 'fade';
+    onNextProject?.();
+  };
+
+  const getEnterClass = (dir: SlideDirection) =>
+    dir === 'next'
+      ? 'lightbox-enter-next'
+      : dir === 'prev'
+        ? 'lightbox-enter-prev'
+        : 'lightbox-enter-fade';
+
+  const getExitClass = (dir: SlideDirection) =>
+    dir === 'next'
+      ? 'lightbox-exit-next'
+      : dir === 'prev'
+        ? 'lightbox-exit-prev'
+        : 'lightbox-exit-fade';
 
   const blockMediaAction = (e: React.SyntheticEvent) => {
     e.preventDefault();
+  };
+
+  const renderSlideMedia = (slide: ActiveSlide, interactive: boolean) => {
+    const slideIsVideo = slide.item.type === 'video';
+    const slideCategory = (slide.item.category || 'Selected Work').replace(/_/g, ' ');
+
+    if (slideIsVideo) {
+      const embedUrl = slide.src.trim();
+      return (
+        <div className="w-full max-w-5xl aspect-video rounded-sm overflow-hidden border border-white/10 bg-black flex items-center justify-center">
+          {embedUrl ? (
+            <iframe
+              src={embedUrl}
+              title={
+                slide.projectTitle
+                  ? `${slide.projectTitle} video`
+                  : `${slideCategory} video`
+              }
+              className="w-full h-full"
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+            ></iframe>
+          ) : (
+            <span className="font-mono text-xs text-zinc-500">
+              Video preview unavailable
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (!slide.src) {
+      return (
+        <div className="px-8 py-12 bg-charcoal border border-white/10 rounded-sm text-center">
+          <span className="font-mono text-xs text-zinc-500">
+            Image preview unavailable
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        onClick={interactive ? () => setIsZoomed((z) => !z) : undefined}
+        onContextMenu={blockMediaAction}
+        onDragStart={blockMediaAction}
+        className={`relative inline-flex items-center justify-center rounded-sm overflow-hidden transition-transform duration-300 protected-media ${
+          interactive && isZoomed ? 'lightbox-img-zoomed' : 'lightbox-img-normal'
+        }`}
+      >
+        <img
+          src={slide.src}
+          alt={
+            slide.projectTitle
+              ? `${slide.projectTitle} — ${slideCategory}`
+              : `${slideCategory} showcase`
+          }
+          draggable={false}
+          decoding="sync"
+          referrerPolicy="no-referrer"
+          onContextMenu={blockMediaAction}
+          onDragStart={blockMediaAction}
+          onError={(e) => {
+            const fallback = (slide.item.thumbUrl || '').trim();
+            if (fallback && (e.target as HTMLImageElement).src !== fallback) {
+              (e.target as HTMLImageElement).src = fallback;
+            }
+          }}
+          className={`block max-w-full w-auto h-auto object-contain protected-img ${
+            showFilmstrip
+              ? 'max-h-[calc(100vh-17rem)] sm:max-h-[calc(100vh-16rem)]'
+              : 'max-h-[calc(100vh-13rem)] sm:max-h-[calc(100vh-12rem)]'
+          }`}
+        />
+        {/* Transparent protective shield above the full-resolution image */}
+        <div
+          aria-hidden="true"
+          onContextMenu={blockMediaAction}
+          onDragStart={blockMediaAction}
+          className="absolute inset-0 z-10 bg-transparent protected-media"
+        />
+      </div>
+    );
   };
 
   return (
@@ -153,7 +483,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       className="fixed inset-0 z-50 bg-darkroom/98 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 protected-media"
     >
       {/* Top Darkroom Bar (Project Name + Unboxed Metadata, No File Names, No New-Tab Button) */}
-      <div className="flex items-center justify-between gap-4 z-20 pb-3 border-b border-white/[0.08]">
+      <div className="relative flex items-center justify-between gap-4 z-20 pb-3 border-b border-white/[0.08]">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs min-w-0">
           {activeProjectTitle && (
             <>
@@ -209,9 +539,19 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             <i className="fa-solid fa-xmark"></i>
           </button>
         </div>
+
+        {/* Hairline loading progress accent when decoding an uncached 4K frame */}
+        {isTransitioningImage && (
+          <div
+            aria-hidden="true"
+            className="absolute left-0 right-0 -bottom-px h-px overflow-hidden pointer-events-none"
+          >
+            <div className="w-1/3 h-full bg-brass/80 lightbox-loading-bar" />
+          </div>
+        )}
       </div>
 
-      {/* Center Darkroom Media Stage */}
+      {/* Center Darkroom Dual-Layer Cross-Slide Media Stage */}
       <div className="relative flex-1 flex items-center justify-center overflow-hidden my-3 sm:my-4">
         {/* Previous Button */}
         {items.length > 1 && (
@@ -219,90 +559,46 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             type="button"
             onClick={handlePrev}
             aria-label="Previous view"
-            className="absolute left-2 sm:left-4 z-20 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
+            className="absolute left-2 sm:left-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
             <i className="fa-solid fa-chevron-left text-xs"></i>
           </button>
         )}
 
-        {/* Protected Media Container */}
+        {/* Dual-Layer Protected Media Stage (Outgoing & Incoming Animate Simultaneously) */}
         <div
           onContextMenu={blockMediaAction}
           onDragStart={blockMediaAction}
-          className="w-full h-full flex items-center justify-center overflow-auto p-2 protected-media"
+          className="relative w-full h-full overflow-hidden protected-media"
         >
-          <div
-            key={stageKey}
-            className={`w-full h-full flex items-center justify-center ${transitionClass}`}
-          >
-            {isVideo ? (
-              <div className="w-full max-w-5xl aspect-video rounded-sm overflow-hidden border border-white/10 bg-black flex items-center justify-center">
-                {videoEmbedUrl ? (
-                  <iframe
-                    src={videoEmbedUrl}
-                    title={
-                      activeProjectTitle
-                        ? `${activeProjectTitle} video`
-                        : `${categoryLabel} video`
-                    }
-                    className="w-full h-full"
-                    allow="autoplay; fullscreen; picture-in-picture"
-                    allowFullScreen
-                  ></iframe>
-                ) : (
-                  <span className="font-mono text-xs text-zinc-500">
-                    Video preview unavailable
-                  </span>
-                )}
-              </div>
-            ) : imageDisplayUrl ? (
-              <div
-                onClick={() => setIsZoomed(!isZoomed)}
-                onContextMenu={blockMediaAction}
-                onDragStart={blockMediaAction}
-                className={`relative inline-flex items-center justify-center rounded-sm overflow-hidden transition-transform duration-300 protected-media ${
-                  isZoomed ? 'lightbox-img-zoomed' : 'lightbox-img-normal'
-                }`}
-              >
-                <img
-                  src={imageDisplayUrl}
-                  alt={
-                    activeProjectTitle
-                      ? `${activeProjectTitle} — ${categoryLabel}`
-                      : `${categoryLabel} showcase`
-                  }
-                  draggable={false}
-                  referrerPolicy="no-referrer"
-                  onContextMenu={blockMediaAction}
-                  onDragStart={blockMediaAction}
-                  onError={(e) => {
-                    const fallback = (currentItem.thumbUrl || '').trim();
-                    if (fallback && (e.target as HTMLImageElement).src !== fallback) {
-                      (e.target as HTMLImageElement).src = fallback;
-                    }
-                  }}
-                  className={`block max-w-full w-auto h-auto object-contain protected-img ${
-                    showFilmstrip
-                      ? 'max-h-[calc(100vh-17rem)] sm:max-h-[calc(100vh-16rem)]'
-                      : 'max-h-[calc(100vh-13rem)] sm:max-h-[calc(100vh-12rem)]'
-                  }`}
-                />
-                {/* Transparent protective shield above the full-resolution image */}
-                <div
-                  aria-hidden="true"
-                  onContextMenu={blockMediaAction}
-                  onDragStart={blockMediaAction}
-                  className="absolute inset-0 z-10 bg-transparent protected-media"
-                />
-              </div>
-            ) : (
-              <div className="px-8 py-12 bg-charcoal border border-white/10 rounded-sm text-center">
-                <span className="font-mono text-xs text-zinc-500">
-                  Image preview unavailable
-                </span>
-              </div>
-            )}
-          </div>
+          {/* Outgoing Slide Layer */}
+          {exitingSlide && (
+            <div
+              key={`exit-${exitingSlide.key}`}
+              aria-hidden="true"
+              className={`absolute inset-0 z-10 flex items-center justify-center p-2 pointer-events-none ${getExitClass(
+                exitingSlide.direction
+              )}`}
+            >
+              {renderSlideMedia(exitingSlide, false)}
+            </div>
+          )}
+
+          {/* Active / Incoming Slide Layer */}
+          {displayedSlide ? (
+            <div
+              key={`active-${displayedSlide.key}`}
+              className={`absolute inset-0 z-20 flex items-center justify-center p-2 ${
+                isZoomed ? 'overflow-auto' : 'overflow-hidden'
+              } ${getEnterClass(displayedSlide.direction)}`}
+            >
+              {renderSlideMedia(displayedSlide, true)}
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full border border-white/15 border-t-brass animate-spin" />
+            </div>
+          )}
         </div>
 
         {/* Next Button */}
@@ -311,7 +607,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             type="button"
             onClick={handleNext}
             aria-label="Next view"
-            className="absolute right-2 sm:right-4 z-20 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
+            className="absolute right-2 sm:right-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
             <i className="fa-solid fa-chevron-right text-xs"></i>
           </button>
@@ -333,7 +629,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   onContextMenu={blockMediaAction}
                   onDragStart={blockMediaAction}
                   aria-label={`View ${idx + 1} of ${items.length}`}
-                  className={`relative h-11 w-16 sm:h-12 sm:w-20 rounded-sm overflow-hidden shrink-0 bg-charcoal transition-all duration-150 cursor-pointer protected-media ${
+                  className={`relative h-11 w-16 sm:h-12 sm:w-20 rounded-sm overflow-hidden shrink-0 bg-charcoal transition-all duration-200 cursor-pointer protected-media ${
                     isActive
                       ? 'ring-1 ring-brass opacity-100'
                       : 'opacity-45 hover:opacity-85 border border-white/10'
@@ -376,7 +672,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               <div className="inline-flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={onPrevProject}
+                  onClick={handlePrevProjectClick}
                   title={
                     prevProjectName
                       ? `Previous Project: ${prevProjectName}`
@@ -397,7 +693,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={onNextProject}
+                  onClick={handleNextProjectClick}
                   title={
                     nextProjectName
                       ? `Next Project: ${nextProjectName}`
