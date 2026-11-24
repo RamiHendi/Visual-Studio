@@ -5,6 +5,8 @@ import { LazyThumbnail } from './LazyThumbnail';
 interface StudioShowcaseProps {
   categories: PortfolioCategory[];
   isLoading: boolean;
+  loadError?: boolean;
+  onRetry?: () => void;
   onOpenLightbox: (itemIndex: number, filteredItems: PortfolioItem[]) => void;
   onShowToast: (message: string, isWarning?: boolean) => void;
 }
@@ -12,6 +14,8 @@ interface StudioShowcaseProps {
 export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   categories,
   isLoading,
+  loadError = false,
+  onRetry,
   onOpenLightbox,
   onShowToast,
 }) => {
@@ -160,6 +164,30 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           <div className="h-72 bg-charcoal rounded-sm"></div>
           <div className="h-72 bg-charcoal rounded-sm"></div>
           <div className="h-72 bg-charcoal rounded-sm"></div>
+        </div>
+      </section>
+    );
+  }
+
+  if (loadError && categories.length === 0) {
+    return (
+      <section id="studio-showcase" className="py-12 scroll-mt-20">
+        <div className="text-center py-20 border border-white/[0.08] bg-charcoal/50 rounded-sm px-6">
+          <h3 className="font-display text-lg font-medium text-zinc-100">
+            Unable to Load Studio Works
+          </h3>
+          <p className="text-sm text-zinc-400 max-w-md mx-auto mt-2">
+            The live portfolio gallery took too long to respond. Please try loading again.
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-5 px-5 py-2.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian font-semibold text-xs transition-colors duration-150 cursor-pointer"
+            >
+              Retry Loading
+            </button>
+          )}
         </div>
       </section>
     );

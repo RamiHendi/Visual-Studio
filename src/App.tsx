@@ -15,6 +15,8 @@ import { Toast } from './components/Toast';
 import { Footer } from './components/Footer';
 import { AmbientGeometry } from './components/AmbientGeometry';
 
+const LIVE_PERSISTENT_CACHE_KEY = 'rami_hendi_visual_studio_live_cache_v2';
+
 const isFeaturedPortfolioItem = (item: PortfolioItem): boolean => {
   if (item.featured === true) return true;
   const title = (item.title || '').toLowerCase();
@@ -26,10 +28,61 @@ const isFeaturedPortfolioItem = (item: PortfolioItem): boolean => {
   );
 };
 
+const isValidLiveStudioData = (data: unknown): data is StudioData => {
+  if (!data || typeof data !== 'object') return false;
+  const candidate = data as StudioData;
+  if (!Array.isArray(candidate.portfolio)) return false;
+  // Reject any stale demo placeholder entries
+  const hasDemoItems = candidate.portfolio.some((cat) =>
+    (cat.items || []).some((item) => typeof item.id === 'string' && item.id.startsWith('demo-'))
+  );
+  return !hasDemoItems;
+};
+
+const readCachedLiveData = (): { data: StudioData | null; isSessionFresh: boolean } => {
+  try {
+    const sessionRaw = sessionStorage.getItem(CACHE_KEY);
+    if (sessionRaw) {
+      const parsed = JSON.parse(sessionRaw);
+      if (isValidLiveStudioData(parsed) && parsed.portfolio.length > 0) {
+        return { data: parsed, isSessionFresh: true };
+      }
+      sessionStorage.removeItem(CACHE_KEY);
+    }
+  } catch {
+    sessionStorage.removeItem(CACHE_KEY);
+  }
+
+  try {
+    const localRaw = localStorage.getItem(LIVE_PERSISTENT_CACHE_KEY);
+    if (localRaw) {
+      const parsed = JSON.parse(localRaw);
+      if (isValidLiveStudioData(parsed) && parsed.portfolio.length > 0) {
+        return { data: parsed, isSessionFresh: false };
+      }
+      localStorage.removeItem(LIVE_PERSISTENT_CACHE_KEY);
+    }
+  } catch {
+    localStorage.removeItem(LIVE_PERSISTENT_CACHE_KEY);
+  }
+
+  return { data: null, isSessionFresh: false };
+};
+
 export const App: React.FC = () => {
+  const initialCacheRef = useRef<{ data: StudioData | null; isSessionFresh: boolean } | null>(null);
+  if (initialCacheRef.current === null) {
+    initialCacheRef.current = readCachedLiveData();
+  }
+
   const [currentTab, setCurrentTab] = useState<MainTab>('portfolio');
-  const [studioData, setStudioData] = useState<StudioData>(DEMO_STUDIO_DATA);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [studioData, setStudioData] = useState<StudioData>(
+    () => initialCacheRef.current?.data ?? DEMO_STUDIO_DATA
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !initialCacheRef.current?.data
+  );
+  const [loadError, setLoadError] = useState<boolean>(false);
 
   // Toast state
   const [toast, setToast] = useState<ToastState>({
@@ -39,6 +92,7 @@ export const App: React.FC = () => {
   });
   const toastTimerRef = useRef<number | null>(null);
   const handledDeepLinkRef = useRef<string | null>(null);
+  const hasLiveDataRef = useRef<boolean>(Boolean(initialCacheRef.current?.data));
 
   // Lightbox state
   const [lightbox, setLightbox] = useState<{
@@ -75,50 +129,54 @@ export const App: React.FC = () => {
     return saved && saved.trim() !== '' ? saved.trim() : DEFAULT_APPS_SCRIPT_URL.trim();
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (forceRefresh = false) => {
     const targetUrl = getActiveAppsScriptUrl();
-
-    // Check sessionStorage cache first
-    if (targetUrl) {
-      const cached = sessionStorage.getItem(CACHE_KEY);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached) as StudioData;
-          if (parsed && Array.isArray(parsed.portfolio)) {
-            setStudioData(parsed);
-            return;
-          }
-        } catch {
-          sessionStorage.removeItem(CACHE_KEY);
-        }
-      }
+    if (!targetUrl) {
+      setIsLoading(false);
+      return;
     }
 
-    // Fetch live data if URL configured
-    if (targetUrl) {
+    // If sessionStorage already has fresh live data and this isn't a forced retry, skip network fetch
+    if (!forceRefresh && initialCacheRef.current?.isSessionFresh && hasLiveDataRef.current) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Only show loading shimmer when we don't already have real cached Google Drive data on screen
+    if (!hasLiveDataRef.current) {
       setIsLoading(true);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 9000);
+    }
+    setLoadError(false);
 
-        const response = await fetch(targetUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
+    try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 12000);
 
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const liveData = (await response.json()) as StudioData;
+      const response = await fetch(targetUrl, { signal: controller.signal });
+      window.clearTimeout(timeoutId);
 
-        if (liveData && Array.isArray(liveData.portfolio)) {
-          setStudioData(liveData);
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify(liveData));
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const liveData = (await response.json()) as StudioData;
+
+      if (isValidLiveStudioData(liveData)) {
+        hasLiveDataRef.current = true;
+        setStudioData(liveData);
+        setLoadError(false);
+        try {
+          const serialized = JSON.stringify(liveData);
+          sessionStorage.setItem(CACHE_KEY, serialized);
+          localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
+        } catch {
+          // Ignore storage quota errors
         }
-      } catch (err) {
-        console.warn('Using built-in Studio data:', err);
-        setStudioData(DEMO_STUDIO_DATA);
-      } finally {
-        setIsLoading(false);
       }
-    } else {
-      setStudioData(DEMO_STUDIO_DATA);
+    } catch (err) {
+      console.warn('Could not fetch live Google Drive studio data:', err);
+      if (!hasLiveDataRef.current) {
+        setLoadError(true);
+      }
+    } finally {
+      setIsLoading(false);
     }
   }, [getActiveAppsScriptUrl]);
 
@@ -186,7 +244,7 @@ export const App: React.FC = () => {
     setLightbox((prev) => ({ ...prev, itemIndex: newIndex }));
   };
 
-  // Derive Hero information and curated Featured Spotlight items
+  // Derive Hero information and curated Featured Spotlight items (real Google Drive works only)
   const {
     heroTitle,
     heroSubtitle,
@@ -265,6 +323,7 @@ export const App: React.FC = () => {
           categoriesCount={totalCategories}
           worksCount={totalWorks}
           spotlightItems={spotlightItems}
+          isLoading={isLoading}
           onOpenSpotlight={(index) => handleOpenLightbox(index, spotlightItems)}
           onExploreWorks={handleExploreWorks}
           onOpenCV={() => handleSelectTab('cv')}
@@ -277,6 +336,8 @@ export const App: React.FC = () => {
           <StudioShowcase
             categories={studioData.portfolio || []}
             isLoading={isLoading}
+            loadError={loadError}
+            onRetry={() => loadData(true)}
             onOpenLightbox={handleOpenLightbox}
             onShowToast={showToast}
           />

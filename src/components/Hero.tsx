@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PortfolioItem } from '../types';
 
 interface HeroProps {
@@ -7,6 +7,7 @@ interface HeroProps {
   categoriesCount: number;
   worksCount: number;
   spotlightItems: PortfolioItem[];
+  isLoading?: boolean;
   onOpenSpotlight: (index: number) => void;
   onExploreWorks: () => void;
   onOpenCV: () => void;
@@ -29,6 +30,7 @@ export const Hero: React.FC<HeroProps> = ({
   categoriesCount,
   worksCount,
   spotlightItems,
+  isLoading = false,
   onOpenSpotlight,
   onExploreWorks,
   onOpenCV,
@@ -43,7 +45,9 @@ export const Hero: React.FC<HeroProps> = ({
     ''
   ).trim();
 
+  const heroImgRef = useRef<HTMLImageElement | null>(null);
   const [imgSrc, setImgSrc] = useState<string>(resolvedSpotlightSrc);
+  const [imgLoaded, setImgLoaded] = useState<boolean>(false);
   const [hasError, setHasError] = useState<boolean>(false);
 
   useEffect(() => {
@@ -54,8 +58,16 @@ export const Hero: React.FC<HeroProps> = ({
 
   useEffect(() => {
     setHasError(false);
+    setImgLoaded(false);
     setImgSrc(resolvedSpotlightSrc);
   }, [resolvedSpotlightSrc]);
+
+  useEffect(() => {
+    const img = heroImgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setImgLoaded(true);
+    }
+  }, [imgSrc]);
 
   const handlePrevSpotlight = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -168,35 +180,57 @@ export const Hero: React.FC<HeroProps> = ({
               onDragStart={blockMediaAction}
               className="relative flex-1 min-h-[290px] sm:min-h-[400px] lg:min-h-[450px] bg-charcoal overflow-hidden rounded-sm protected-media group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass"
             >
-              {activeSpotlight && imgSrc && !hasError ? (
-                <img
-                  src={imgSrc}
-                  alt={`${activeCategoryLabel} featured render`}
-                  draggable={false}
-                  loading="eager"
-                  fetchPriority="high"
-                  referrerPolicy="no-referrer"
-                  onContextMenu={blockMediaAction}
-                  onDragStart={blockMediaAction}
-                  onError={() => {
-                    if (
-                      activeSpotlight.thumbUrl &&
-                      imgSrc !== activeSpotlight.thumbUrl
-                    ) {
-                      setImgSrc(activeSpotlight.thumbUrl);
-                    } else {
-                      setHasError(true);
-                    }
-                  }}
-                  className="w-full h-full object-cover protected-img transform group-hover:scale-[1.02] transition-transform duration-500 ease-out"
-                />
+              {isLoading && !activeSpotlight ? (
+                <div
+                  aria-hidden="true"
+                  className="w-full h-full min-h-[290px] sm:min-h-[400px] lg:min-h-[450px] bg-gradient-to-br from-charcoal via-panel to-obsidian animate-pulse flex items-center justify-center"
+                >
+                  <span className="font-mono text-xs text-zinc-500 tracking-wide">
+                    Loading studio showcase...
+                  </span>
+                </div>
+              ) : activeSpotlight && imgSrc && !hasError ? (
+                <>
+                  {!imgLoaded && (
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 bg-gradient-to-br from-charcoal via-panel to-obsidian animate-pulse"
+                    />
+                  )}
+                  <img
+                    ref={heroImgRef}
+                    src={imgSrc}
+                    alt={`${activeCategoryLabel} featured render`}
+                    draggable={false}
+                    loading="eager"
+                    fetchPriority="high"
+                    referrerPolicy="no-referrer"
+                    onContextMenu={blockMediaAction}
+                    onDragStart={blockMediaAction}
+                    onLoad={() => setImgLoaded(true)}
+                    onError={() => {
+                      if (
+                        activeSpotlight.thumbUrl &&
+                        imgSrc !== activeSpotlight.thumbUrl
+                      ) {
+                        setImgSrc(activeSpotlight.thumbUrl);
+                      } else {
+                        setHasError(true);
+                        setImgLoaded(true);
+                      }
+                    }}
+                    className={`w-full h-full object-cover protected-img transform group-hover:scale-[1.02] transition-[transform,opacity] duration-500 ease-out ${
+                      imgLoaded ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  />
+                </>
               ) : (
                 <div className="w-full h-full min-h-[290px] sm:min-h-[400px] bg-gradient-to-br from-charcoal via-panel to-obsidian flex flex-col items-center justify-center gap-2 p-8 text-center">
                   <span className="font-display text-sm font-medium text-zinc-300">
-                    Selected Studio Monograph
+                    Rami Hendi Visual Studio
                   </span>
                   <span className="font-mono text-xs text-zinc-500">
-                    Architectural Visualization &amp; 3D Design
+                    3D Design · Architectural Visualization · Industrial Design
                   </span>
                 </div>
               )}
@@ -210,7 +244,8 @@ export const Hero: React.FC<HeroProps> = ({
               />
 
               {/* Measured bottom contrast scrim with quiet unboxed metadata & spotlight switcher */}
-              <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-4 sm:px-6 pb-4 pt-14 flex items-end justify-between gap-4 pointer-events-none">
+              {activeSpotlight && (
+                <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-4 sm:px-6 pb-4 pt-14 flex items-end justify-between gap-4 pointer-events-none">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-xs text-zinc-300">
                     <span className="text-brass font-medium">Featured Spotlight</span>
@@ -254,7 +289,8 @@ export const Hero: React.FC<HeroProps> = ({
                     </button>
                   </div>
                 )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -272,7 +308,7 @@ export const Hero: React.FC<HeroProps> = ({
 
           <div className="py-5 pl-4 lg:px-6 lg:border-r border-b lg:border-b-0 border-white/[0.08]">
             <div className="font-display text-2xl sm:text-3xl font-medium text-zinc-100 tabular-nums">
-              {worksCount}
+              {isLoading && worksCount === 0 ? '—' : worksCount}
             </div>
             <div className="text-xs text-zinc-400 mt-1">
               Selected Studio Works
@@ -281,7 +317,7 @@ export const Hero: React.FC<HeroProps> = ({
 
           <div className="py-5 pr-4 lg:px-6 border-r border-white/[0.08]">
             <div className="font-display text-2xl sm:text-3xl font-medium text-zinc-100 tabular-nums">
-              {categoriesCount}
+              {isLoading && categoriesCount === 0 ? '—' : categoriesCount}
             </div>
             <div className="text-xs text-zinc-400 mt-1">
               Visual Disciplines
