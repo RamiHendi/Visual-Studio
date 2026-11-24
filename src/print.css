@@ -1,0 +1,120 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 16mm;
+  }
+
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  header,
+  footer,
+  nav,
+  .ambient-geometry,
+  .print-hidden,
+  [role="dialog"],
+  [role="status"] {
+    display: none !important;
+  }
+
+  main {
+    display: block !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body * {
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    color: #000000 !important;
+    border-color: #d4d4d8 !important;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: #000000 !important;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  a,
+  a:visited {
+    color: #000000 !important;
+    text-decoration: none !important;
+  }
+
+  [data-cv-section] {
+    padding-top: 14pt !important;
+    padding-bottom: 14pt !important;
+    gap: 10pt !important;
+    border-top-color: #d4d4d8 !important;
+  }
+
+  [data-cv-section]:first-child {
+    padding-top: 0 !important;
+  }
+
+  [data-cv-role-section] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    padding-top: 10pt !important;
+    padding-bottom: 10pt !important;
+  }
+
+  [data-cv-role-section]:first-child {
+    padding-top: 0 !important;
+  }
+
+  .cv-print-root {
+    padding-top: 0 !important;
+    gap: 16pt !important;
+  }
+
+  .cv-print-header {
+    padding-bottom: 12pt !important;
+    margin-bottom: 12pt !important;
+    border-bottom: 1pt solid #000000 !important;
+  }
+
+  .cv-print-muted {
+    color: #3f3f46 !important;
+  }
+
+  .cv-print-footer {
+    display: block !important;
+    margin-top: 18pt !important;
+    padding-top: 8pt !important;
+    border-top: 0.75pt solid #d4d4d8 !important;
+    color: #52525b !important;
+    font-size: 9pt !important;
+    text-align: right !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

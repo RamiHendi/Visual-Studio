@@ -4,10 +4,12 @@ interface LazyThumbnailProps {
   src: string;
   alt: string;
   eager?: boolean;
+  loading?: 'lazy' | 'eager';
+  decoding?: 'async' | 'sync' | 'auto';
 }
 
 export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
-  ({ src, alt, eager = false }) => {
+  ({ src, alt, eager = false, loading = 'lazy', decoding = 'async' }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const imgRef = useRef<HTMLImageElement | null>(null);
     const [shouldLoad, setShouldLoad] = useState<boolean>(eager);
@@ -108,8 +110,8 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
               width={1000}
               height={625}
               draggable={false}
-              loading={eager ? 'eager' : 'lazy'}
-              decoding="async"
+              loading={loading}
+              decoding={decoding}
               fetchPriority={eager ? 'high' : 'low'}
               referrerPolicy="no-referrer"
               onContextMenu={(e) => e.preventDefault()}

@@ -604,7 +604,7 @@ export const App: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-obsidian text-[#F4F4F5] relative">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-brass focus:text-obsidian focus:text-xs focus:font-semibold focus:rounded-sm"
+        className="print-hidden sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-brass focus:text-obsidian focus:text-xs focus:font-semibold focus:rounded-sm"
       >
         Skip to main content
       </a>

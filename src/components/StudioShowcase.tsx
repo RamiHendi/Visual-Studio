@@ -40,6 +40,18 @@ function formatMediaCountLabel(items: PortfolioItem[]): string {
   return `${imageCount} ${imageCount === 1 ? 'View' : 'Views'}`;
 }
 
+function renderShowcaseImage(src: string, alt: string, eager = false): React.ReactElement {
+  return (
+    <LazyThumbnail
+      src={src}
+      alt={alt}
+      eager={eager}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
+
 export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   categories,
   isLoading,
@@ -512,15 +524,13 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                 className="studio-card-enter protected-media group relative rounded-sm overflow-hidden bg-charcoal cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass"
               >
                 <div className="relative overflow-hidden bg-charcoal">
-                  <LazyThumbnail
-                    src={project.coverUrl}
-                    alt={
-                      showProjectTitle
-                        ? `${project.name} — ${categoryLabel} by Rami Hendi`
-                        : `${categoryLabel} 3D visualization by Rami Hendi`
-                    }
-                    eager={idx < 3}
-                  />
+                  {renderShowcaseImage(
+                    project.coverUrl,
+                    showProjectTitle
+                      ? `${project.name} — ${categoryLabel} by Rami Hendi`
+                      : `${categoryLabel} 3D visualization by Rami Hendi`,
+                    idx < 3
+                  )}
 
                   {isVideoOnly && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/25 group-hover:bg-black/15 transition-colors duration-200 pointer-events-none">

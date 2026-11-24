@@ -167,6 +167,14 @@ function splitSkillLabel(text: string): { label: string; detail: string } | null
   return { label, detail };
 }
 
+function formatPrintDate(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 export const InteractiveCV: React.FC<InteractiveCVProps> = ({
   elements,
   cvPdfUrl,
@@ -176,10 +184,21 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
   const [activeRole, setActiveRole] = useState<{ section: string; role: string } | null>(
     null
   );
+  const [printDate, setPrintDate] = useState<string>(() => formatPrintDate(new Date()));
   const sectionNodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const roleNodesRef = useRef<Map<string, { section: string; role: string; node: HTMLDivElement }>>(
     new Map()
   );
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      setPrintDate(formatPrintDate(new Date()));
+    };
+    window.addEventListener('beforeprint', handleBeforePrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+    };
+  }, []);
 
   const { sections, headerSubtitle, contactTokens } = useMemo(() => {
     if (!elements || elements.length === 0) {
@@ -425,10 +444,10 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
     : 'Rami Hendi · 3D Artist (Generalist) · 10+ Years of Experience';
 
   return (
-    <section aria-labelledby="cv-page-heading" className="space-y-12 pt-2 sm:pt-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-8 border-b border-white/[0.08]">
+    <section aria-labelledby="cv-page-heading" className="cv-print-root space-y-12 pt-2 sm:pt-6">
+      <div className="cv-print-header flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-8 border-b border-white/[0.08]">
         <div className="space-y-2.5">
-          <p className="text-xs font-mono text-zinc-400 tracking-wide">
+          <p className="cv-print-muted text-xs font-mono text-zinc-400 tracking-wide">
             {eyebrowText}
           </p>
           <h1
@@ -438,7 +457,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
             Curriculum Vitae
           </h1>
           {contactTokens.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs sm:text-sm text-zinc-400 pt-0.5">
+            <div className="cv-print-muted flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs sm:text-sm text-zinc-400 pt-0.5">
               {contactTokens
                 .filter((token) => !/^(linkedin|facebook)\b/i.test(token))
                 .map((token, idx, arr) => {
@@ -473,13 +492,13 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
                 })}
             </div>
           ) : (
-            <p className="text-sm text-zinc-400">
+            <p className="cv-print-muted text-sm text-zinc-400">
               Professional Experience, Technical Skills &amp; Education
             </p>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
+        <div className="print-hidden flex flex-wrap items-center gap-3 shrink-0">
           <button
             type="button"
             onClick={() => window.print()}
@@ -701,6 +720,10 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
           })}
         </div>
       )}
+
+      <div className="hidden cv-print-footer font-mono text-[11px] tracking-wide">
+        Generated on {printDate}
+      </div>
     </section>
   );
 };

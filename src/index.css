@@ -320,15 +320,3 @@ body {
     opacity: 0.45;
   }
 }
-
-@media print {
-  body {
-    background-color: #FFFFFF !important;
-    color: #111114 !important;
-  }
-  header,
-  footer,
-  .ambient-geometry {
-    display: none !important;
-  }
-}

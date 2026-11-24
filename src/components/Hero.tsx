@@ -50,7 +50,7 @@ export const Hero: React.FC<HeroProps> = React.memo(
     };
 
     return (
-      <section aria-label="Introduction" className="relative z-10 pt-10 sm:pt-14 lg:pt-16 pb-4">
+      <section aria-label="Introduction" className="print-hidden relative z-10 pt-10 sm:pt-14 lg:pt-16 pb-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
             <div className="lg:col-span-7 flex flex-col justify-between gap-8 py-1">
