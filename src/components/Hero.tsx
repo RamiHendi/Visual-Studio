@@ -188,7 +188,7 @@ export const Hero: React.FC<HeroProps> = React.memo(
                 {isLoading && projectsCount === 0 ? '—' : projectsCount.toLocaleString()}
               </div>
               <div className="text-xs text-zinc-400 mt-1">
-                All Projects
+                Survived Projects
               </div>
             </div>
 
