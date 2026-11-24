@@ -1,5 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { PortfolioCategory, PortfolioItem, GalleryLayout } from '../types';
+import {
+  PortfolioCategory,
+  PortfolioItem,
+  PortfolioProject,
+  GalleryLayout,
+} from '../types';
+import { getCategoryProjects } from '../utils/portfolioProjects';
 import { LazyThumbnail } from './LazyThumbnail';
 
 interface StudioShowcaseProps {
@@ -7,8 +13,29 @@ interface StudioShowcaseProps {
   isLoading: boolean;
   loadError?: boolean;
   onRetry?: () => void;
-  onOpenLightbox: (itemIndex: number, filteredItems: PortfolioItem[]) => void;
+  onOpenLightbox: (
+    itemIndex: number,
+    items: PortfolioItem[],
+    projectTitle?: string,
+    projectList?: PortfolioProject[],
+    projectIndex?: number
+  ) => void;
   onShowToast: (message: string, isWarning?: boolean) => void;
+}
+
+function formatMediaCountLabel(items: PortfolioItem[]): string {
+  const imageCount = items.filter((i) => i.type !== 'video').length;
+  const videoCount = items.filter((i) => i.type === 'video').length;
+
+  if (imageCount > 0 && videoCount > 0) {
+    return `${imageCount} ${imageCount === 1 ? 'Image' : 'Images'} · ${videoCount} ${
+      videoCount === 1 ? 'Video' : 'Videos'
+    }`;
+  }
+  if (videoCount > 0) {
+    return `${videoCount} ${videoCount === 1 ? 'Video' : 'Videos'}`;
+  }
+  return `${imageCount} ${imageCount === 1 ? 'View' : 'Views'}`;
 }
 
 export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
@@ -23,7 +50,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyFeatured, setOnlyFeatured] = useState<boolean>(false);
   const [layout, setLayout] = useState<GalleryLayout>('masonry');
-  const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
+  const [copiedProjectId, setCopiedProjectId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -34,14 +61,21 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     };
   }, []);
 
-  const getItemDirectLink = (item: PortfolioItem): string => {
-    if (item.id) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('work', item.id);
-      url.hash = '';
+  const getProjectDirectLink = (project: PortfolioProject): string => {
+    const url = new URL(window.location.href);
+    url.hash = '';
+    if (project.isProjectGroup && project.id) {
+      url.searchParams.delete('work');
+      url.searchParams.set('project', project.id);
       return url.toString();
     }
-    return item.fullUrl || item.embedUrl || item.thumbUrl || window.location.href;
+    const firstItem = project.items[0];
+    if (firstItem?.id) {
+      url.searchParams.delete('project');
+      url.searchParams.set('work', firstItem.id);
+      return url.toString();
+    }
+    return window.location.href;
   };
 
   const copyTextToClipboard = async (text: string): Promise<boolean> => {
@@ -70,18 +104,21 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     }
   };
 
-  const handleShareItem = async (e: React.MouseEvent, item: PortfolioItem) => {
+  const handleShareProject = async (
+    e: React.MouseEvent,
+    project: PortfolioProject
+  ) => {
     e.stopPropagation();
-    const directLink = getItemDirectLink(item);
+    const directLink = getProjectDirectLink(project);
     const copied = await copyTextToClipboard(directLink);
 
     if (copied) {
-      setCopiedItemId(item.id);
+      setCopiedProjectId(project.id);
       if (copiedTimerRef.current !== null) {
         window.clearTimeout(copiedTimerRef.current);
       }
       copiedTimerRef.current = window.setTimeout(() => {
-        setCopiedItemId(null);
+        setCopiedProjectId(null);
         copiedTimerRef.current = null;
       }, 2000);
       onShowToast('Direct link copied to clipboard!');
@@ -90,60 +127,104 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     }
   };
 
-  const totalWorks = useMemo(() => {
-    return categories.reduce((acc, cat) => acc + (cat.items ? cat.items.length : 0), 0);
+  // Precompute normalized projects per category
+  const categoryEntries = useMemo(() => {
+    return categories.map((cat) => ({
+      category: cat.category,
+      projects: getCategoryProjects(cat),
+    }));
   }, [categories]);
 
-  const isItemFeatured = (item: PortfolioItem): boolean => {
-    if (item.featured === true) return true;
-    const title = (item.title || '').toLowerCase();
-    const desc = (item.description || '').toLowerCase();
-    return (
-      title.includes('[featured]') ||
-      desc.includes('#featured') ||
-      desc.includes('featured: true')
+  const totalEntries = useMemo(() => {
+    return categoryEntries.reduce((acc, entry) => acc + entry.projects.length, 0);
+  }, [categoryEntries]);
+
+  const hasExplicitProjectGroups = useMemo(() => {
+    return categoryEntries.some((entry) =>
+      entry.projects.some((proj) => proj.isProjectGroup)
     );
-  };
+  }, [categoryEntries]);
 
   const totalFeaturedCount = useMemo(() => {
     let count = 0;
-    categories.forEach((cat) => {
-      (cat.items || []).forEach((item) => {
-        if (isItemFeatured(item)) count++;
+    categoryEntries.forEach((entry) => {
+      entry.projects.forEach((proj) => {
+        if (proj.featured) count++;
       });
     });
     return count;
-  }, [categories]);
+  }, [categoryEntries]);
 
-  // Flatten and filter items
-  const filteredItems: PortfolioItem[] = useMemo(() => {
-    const items: PortfolioItem[] = [];
+  // Filter projects by active category, Featured checkbox, and search query
+  const filteredProjects: PortfolioProject[] = useMemo(() => {
+    const results: PortfolioProject[] = [];
     const query = searchQuery.trim().toLowerCase();
 
-    categories.forEach((cat) => {
-      if (activeCategory !== 'ALL' && cat.category !== activeCategory) return;
-      (cat.items || []).forEach((item) => {
-        const itemIsFeatured = isItemFeatured(item);
-        if (onlyFeatured && !itemIsFeatured) return;
+    categoryEntries.forEach((entry) => {
+      if (activeCategory !== 'ALL' && entry.category !== activeCategory) return;
+
+      entry.projects.forEach((project) => {
+        if (onlyFeatured && !project.featured) return;
 
         const matchesSearch =
           !query ||
-          item.title.toLowerCase().includes(query) ||
-          (item.description && item.description.toLowerCase().includes(query)) ||
-          cat.category.toLowerCase().includes(query);
+          project.name.toLowerCase().includes(query) ||
+          project.category.toLowerCase().includes(query) ||
+          (project.description && project.description.toLowerCase().includes(query)) ||
+          project.items.some(
+            (item) =>
+              item.title.toLowerCase().includes(query) ||
+              (item.description && item.description.toLowerCase().includes(query))
+          );
 
         if (matchesSearch) {
-          items.push({
-            ...item,
-            category: cat.category,
-            featured: itemIsFeatured,
-          });
+          results.push(project);
         }
       });
     });
 
+    return results;
+  }, [categoryEntries, activeCategory, searchQuery, onlyFeatured]);
+
+  // Standalone loose items in current filter (for smooth cycling when clicking a non-grouped item)
+  const standaloneFilteredItems = useMemo(() => {
+    const items: PortfolioItem[] = [];
+    filteredProjects.forEach((proj) => {
+      if (!proj.isProjectGroup && proj.items[0]) {
+        items.push(proj.items[0]);
+      }
+    });
     return items;
-  }, [categories, activeCategory, searchQuery, onlyFeatured]);
+  }, [filteredProjects]);
+
+  const handleOpenProjectCard = (project: PortfolioProject, projIdx: number) => {
+    if (project.isProjectGroup || project.items.length > 1) {
+      onOpenLightbox(
+        0,
+        project.items,
+        project.name || undefined,
+        filteredProjects,
+        projIdx
+      );
+      return;
+    }
+    const singleItem = project.items[0];
+    if (!singleItem) return;
+    const standaloneIdx = standaloneFilteredItems.findIndex(
+      (i) => i.id === singleItem.id
+    );
+    if (standaloneIdx !== -1 && standaloneFilteredItems.length > 0) {
+      onOpenLightbox(
+        standaloneIdx,
+        standaloneFilteredItems,
+        undefined,
+        filteredProjects,
+        projIdx
+      );
+    } else {
+      onOpenLightbox(0, [singleItem], undefined, filteredProjects, projIdx);
+    }
+  };
 
   const handleResetFilters = () => {
     setActiveCategory('ALL');
@@ -193,17 +274,19 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     );
   }
 
+  const unitLabel = hasExplicitProjectGroups ? 'projects' : 'works';
+
   return (
     <section id="studio-showcase" className="space-y-8 scroll-mt-20">
       {/* Editorial Section Heading */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
         <div>
           <h2 className="font-display text-2xl sm:text-3xl font-medium tracking-tight text-zinc-100">
-            Selected Works
+            {hasExplicitProjectGroups ? 'Selected Projects' : 'Selected Works'}
           </h2>
         </div>
         <p className="font-mono text-xs text-zinc-400 tabular-nums">
-          Showing {filteredItems.length} of {totalWorks} works
+          Showing {filteredProjects.length} of {totalEntries} {unitLabel}
         </p>
       </div>
 
@@ -213,21 +296,21 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
         <div className="block sm:hidden w-full">
           <div className="relative">
             <select
-              aria-label="Filter works by category"
+              aria-label="Filter projects by category"
               value={activeCategory}
               onChange={(e) => setActiveCategory(e.target.value)}
               className="w-full h-11 pl-3.5 pr-12 bg-charcoal border border-white/15 focus:border-brass rounded-sm text-sm font-medium text-zinc-100 appearance-none cursor-pointer focus:outline-none transition-colors"
             >
               <option value="ALL" className="bg-[#111114] text-zinc-100">
-                All Works ({totalWorks})
+                All {hasExplicitProjectGroups ? 'Projects' : 'Works'} ({totalEntries})
               </option>
-              {categories.map((cat) => {
-                const count = cat.items ? cat.items.length : 0;
-                const displayName = cat.category.replace(/_/g, ' ');
+              {categoryEntries.map((entry) => {
+                const count = entry.projects.length;
+                const displayName = entry.category.replace(/_/g, ' ');
                 return (
                   <option
-                    key={cat.category}
-                    value={cat.category}
+                    key={entry.category}
+                    value={entry.category}
                     className="bg-[#111114] text-zinc-100"
                   >
                     {displayName} ({count})
@@ -238,9 +321,9 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
             <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 text-xs flex items-center gap-2">
               <span className="font-mono text-[11px] text-brass tabular-nums">
                 {activeCategory === 'ALL'
-                  ? totalWorks
-                  : categories.find((c) => c.category === activeCategory)?.items
-                      ?.length || 0}
+                  ? totalEntries
+                  : categoryEntries.find((c) => c.category === activeCategory)
+                      ?.projects.length || 0}
               </span>
               <i className="fa-solid fa-chevron-down text-[10px]"></i>
             </div>
@@ -258,25 +341,25 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                 : 'bg-transparent text-zinc-400 hover:text-zinc-100 border border-white/[0.08] hover:border-white/25'
             }`}
           >
-            <span>All Works</span>
+            <span>All {hasExplicitProjectGroups ? 'Projects' : 'Works'}</span>
             <span
               className={`font-mono text-[11px] tabular-nums ${
                 activeCategory === 'ALL' ? 'text-obsidian/80' : 'text-zinc-500'
               }`}
             >
-              {totalWorks}
+              {totalEntries}
             </span>
           </button>
 
-          {categories.map((cat) => {
-            const count = cat.items ? cat.items.length : 0;
-            const isActive = activeCategory === cat.category;
-            const displayName = cat.category.replace(/_/g, ' ');
+          {categoryEntries.map((entry) => {
+            const count = entry.projects.length;
+            const isActive = activeCategory === entry.category;
+            const displayName = entry.category.replace(/_/g, ' ');
             return (
               <button
                 type="button"
-                key={cat.category}
-                onClick={() => setActiveCategory(cat.category)}
+                key={entry.category}
+                onClick={() => setActiveCategory(entry.category)}
                 className={`h-9 px-3.5 rounded-sm text-xs font-medium transition-colors duration-150 flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
                   isActive
                     ? 'bg-brass text-obsidian font-semibold'
@@ -300,7 +383,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full lg:w-auto">
           {/* Featured Checkbox Filter */}
           <label
-            title="Show only featured works"
+            title="Show only featured projects"
             className={`flex items-center gap-2 px-3 h-9 rounded-sm border text-xs font-medium cursor-pointer select-none transition-colors duration-150 whitespace-nowrap shrink-0 ${
               onlyFeatured
                 ? 'bg-brass/15 border-brass text-brass'
@@ -330,8 +413,10 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search works..."
-              aria-label="Search works"
+              placeholder={
+                hasExplicitProjectGroups ? 'Search projects...' : 'Search works...'
+              }
+              aria-label="Search projects"
               className="w-full h-9 pl-8 pr-7 bg-charcoal border border-white/[0.09] rounded-sm text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brass transition-colors"
             />
             {searchQuery && (
@@ -379,13 +464,15 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
       </div>
 
       {/* Empty State */}
-      {filteredItems.length === 0 ? (
+      {filteredProjects.length === 0 ? (
         <div
           key={`empty::${activeCategory}::${onlyFeatured}::${layout}`}
           className="studio-card-enter text-center py-20 border border-white/[0.08] bg-charcoal/50 rounded-sm px-6"
         >
           <h3 className="font-display text-lg font-medium text-zinc-100">
-            {onlyFeatured ? 'No Matching Featured Works' : 'No Matching Works Found'}
+            {onlyFeatured
+              ? 'No Matching Featured Projects'
+              : 'No Matching Projects Found'}
           </h3>
           <p className="text-sm text-zinc-400 max-w-md mx-auto mt-2">
             {onlyFeatured
@@ -401,7 +488,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           </button>
         </div>
       ) : (
-        /* Edge-to-Edge Frameless Gallery Container */
+        /* Edge-to-Edge Frameless Project Gallery */
         <div
           key={`${activeCategory}::${onlyFeatured}::${layout}`}
           className={
@@ -410,30 +497,39 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
               : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5'
           }
         >
-          {filteredItems.map((item, idx) => {
-            const isVideo = item.type === 'video';
+          {filteredProjects.map((project, idx) => {
             const itemWrapperClass = layout === 'masonry' ? 'masonry-item' : '';
-            const categoryLabel = (item.category || 'Portfolio').replace(/_/g, ' ');
+            const categoryLabel = (project.category || 'Portfolio').replace(/_/g, ' ');
+            const isVideoOnly =
+              project.items.length > 0 &&
+              project.items.every((item) => item.type === 'video');
+            const isMultiItem = project.items.length > 1;
+            const mediaCountText = formatMediaCountLabel(project.items);
+            const showProjectTitle = Boolean(project.isProjectGroup && project.name);
 
             return (
               <article
-                key={item.id || idx}
-                onClick={() => onOpenLightbox(idx, filteredItems)}
+                key={project.id || idx}
+                onClick={() => handleOpenProjectCard(project, idx)}
                 onContextMenu={(e) => e.preventDefault()}
                 onDragStart={(e) => e.preventDefault()}
                 className={`${itemWrapperClass} studio-card-enter protected-media group relative rounded-sm overflow-hidden bg-charcoal cursor-pointer`}
               >
-                {/* Edge-to-Edge Protected Media */}
+                {/* Edge-to-Edge Protected Project Cover Media */}
                 <div className="relative overflow-hidden bg-charcoal">
                   <LazyThumbnail
-                    src={item.thumbUrl}
-                    alt={`${categoryLabel} showcase`}
+                    src={project.coverUrl}
+                    alt={
+                      showProjectTitle
+                        ? `${project.name} — ${categoryLabel}`
+                        : `${categoryLabel} showcase`
+                    }
                     layout={layout}
                     eager={idx < 3}
                   />
 
-                  {/* Subtle Center Play Emblem for Videos */}
-                  {isVideo && (
+                  {/* Subtle Center Play Emblem for Video-Only Projects */}
+                  {isVideoOnly && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/25 group-hover:bg-black/15 transition-colors duration-200 pointer-events-none">
                       <div className="w-12 h-12 rounded-full bg-obsidian/80 backdrop-blur-sm border border-white/25 text-zinc-100 group-hover:bg-brass group-hover:text-obsidian group-hover:border-brass flex items-center justify-center transition-all duration-200 transform group-hover:scale-105">
                         <i className="fa-solid fa-play text-sm ml-0.5"></i>
@@ -441,13 +537,36 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                     </div>
                   )}
 
-                  {/* Clean Hover Contrast Scrim (Frameless at rest on desktop; quiet hover reveal) */}
-                  <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-4 pb-3.5 pt-14 flex items-end justify-between gap-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity duration-200 pointer-events-none">
+                  {/* Measured Contrast Scrim (Always shows clean Project Name for folder projects; hover reveal for loose items & actions) */}
+                  <div
+                    className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-4 pb-3.5 pt-16 flex items-end justify-between gap-3 transition-opacity duration-200 pointer-events-none ${
+                      showProjectTitle
+                        ? 'opacity-100'
+                        : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'
+                    }`}
+                  >
                     <div className="min-w-0 space-y-1">
-                      {/* Clean Unboxed Metadata (Zero Pills, Zero File Names) */}
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-200">
-                        <span className="font-medium truncate">{categoryLabel}</span>
-                        {item.featured && (
+                      {/* Project Subfolder Name (Never individual image filenames) */}
+                      {showProjectTitle && (
+                        <h3 className="font-display text-sm sm:text-base font-medium text-zinc-100 tracking-tight leading-snug truncate">
+                          {project.name}
+                        </h3>
+                      )}
+
+                      {/* Clean Unboxed Metadata */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-300">
+                        <span className="truncate">{categoryLabel}</span>
+                        {(showProjectTitle || isMultiItem) && (
+                          <>
+                            <span aria-hidden="true" className="text-zinc-500">
+                              ·
+                            </span>
+                            <span className="font-mono text-[11px] text-zinc-300 tabular-nums">
+                              {mediaCountText}
+                            </span>
+                          </>
+                        )}
+                        {project.featured && (
                           <>
                             <span aria-hidden="true" className="text-zinc-500">
                               ·
@@ -455,7 +574,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                             <span className="text-brass font-medium">Featured</span>
                           </>
                         )}
-                        {isVideo && (
+                        {isVideoOnly && !showProjectTitle && (
                           <>
                             <span aria-hidden="true" className="text-zinc-500">
                               ·
@@ -467,29 +586,35 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                         )}
                       </div>
 
-                      {item.description && (
-                        <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed">
-                          {item.description}
+                      {project.description && (
+                        <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed hidden sm:group-hover:block">
+                          {project.description}
                         </p>
                       )}
                     </div>
 
                     {/* Minimal Functional Share Button */}
-                    <div className="flex items-center gap-1.5 shrink-0 pointer-events-auto">
+                    <div
+                      className={`flex items-center gap-1.5 shrink-0 pointer-events-auto transition-opacity duration-150 ${
+                        showProjectTitle
+                          ? 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'
+                          : 'opacity-100'
+                      }`}
+                    >
                       <button
                         type="button"
-                        onClick={(e) => handleShareItem(e, item)}
+                        onClick={(e) => handleShareProject(e, project)}
                         title="Copy direct link"
                         aria-label="Copy direct link"
                         className={`w-8 h-8 rounded-sm backdrop-blur-sm border flex items-center justify-center transition-colors duration-150 cursor-pointer ${
-                          copiedItemId === item.id
+                          copiedProjectId === project.id
                             ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300'
                             : 'bg-obsidian/75 border-white/20 text-zinc-200 hover:text-obsidian hover:bg-brass hover:border-brass'
                         }`}
                       >
                         <i
                           className={`fa-solid ${
-                            copiedItemId === item.id ? 'fa-check' : 'fa-share-nodes'
+                            copiedProjectId === project.id ? 'fa-check' : 'fa-share-nodes'
                           } text-xs`}
                         ></i>
                       </button>

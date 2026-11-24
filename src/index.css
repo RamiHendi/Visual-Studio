@@ -100,9 +100,58 @@ body {
 .studio-card-enter:nth-child(n + 9) { animation-delay: 360ms; }
 
 @media (prefers-reduced-motion: reduce) {
-  .studio-card-enter {
+  .studio-card-enter,
+  .lightbox-slide-next,
+  .lightbox-slide-prev,
+  .lightbox-slide-fade {
     animation: none;
   }
+}
+
+/* Darkroom Lightbox Directional Image Transitions (Compositor-Only) */
+@keyframes lightboxSlideNext {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes lightboxSlidePrev {
+  from {
+    opacity: 0;
+    transform: translate3d(-24px, 0, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes lightboxSlideFade {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.lightbox-slide-next {
+  animation: lightboxSlideNext 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lightbox-slide-prev {
+  animation: lightboxSlidePrev 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lightbox-slide-fade {
+  animation: lightboxSlideFade 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Portfolio Media Protection Utilities */

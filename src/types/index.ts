@@ -14,12 +14,28 @@ export interface PortfolioItem {
   embedUrl?: string;
   category?: string;
   featured?: boolean;
+  projectId?: string;
+  projectName?: string;
+}
+
+export interface PortfolioProject {
+  id: string;
+  name: string;
+  rawOrder?: string;
+  category: string;
+  description?: string;
+  featured?: boolean;
+  coverUrl: string;
+  items: PortfolioItem[];
+  /** True when backed by an explicit Google Drive project subfolder */
+  isProjectGroup?: boolean;
 }
 
 export interface PortfolioCategory {
   rawOrder: string;
   category: string;
-  items: PortfolioItem[];
+  items?: PortfolioItem[];
+  projects?: PortfolioProject[];
 }
 
 export interface StudioData {

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { StudioData, MainTab, PortfolioItem, ToastState } from './types';
+import { StudioData, MainTab, PortfolioItem, PortfolioProject, ToastState } from './types';
 import {
   DEFAULT_APPS_SCRIPT_URL,
   CACHE_KEY,
   SAVED_URL_KEY,
   DEMO_STUDIO_DATA,
 } from './data/demoData';
+import { getAllPortfolioProjects } from './utils/portfolioProjects';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StudioShowcase } from './components/StudioShowcase';
@@ -15,26 +16,16 @@ import { Toast } from './components/Toast';
 import { Footer } from './components/Footer';
 import { AmbientGeometry } from './components/AmbientGeometry';
 
-const LIVE_PERSISTENT_CACHE_KEY = 'rami_hendi_visual_studio_live_cache_v2';
-
-const isFeaturedPortfolioItem = (item: PortfolioItem): boolean => {
-  if (item.featured === true) return true;
-  const title = (item.title || '').toLowerCase();
-  const desc = (item.description || '').toLowerCase();
-  return (
-    title.includes('[featured]') ||
-    desc.includes('#featured') ||
-    desc.includes('featured: true')
-  );
-};
+const LIVE_PERSISTENT_CACHE_KEY = 'rami_hendi_visual_studio_live_cache_v3';
 
 const isValidLiveStudioData = (data: unknown): data is StudioData => {
   if (!data || typeof data !== 'object') return false;
   const candidate = data as StudioData;
   if (!Array.isArray(candidate.portfolio)) return false;
-  // Reject any stale demo placeholder entries
   const hasDemoItems = candidate.portfolio.some((cat) =>
-    (cat.items || []).some((item) => typeof item.id === 'string' && item.id.startsWith('demo-'))
+    (cat.items || []).some(
+      (item) => typeof item.id === 'string' && item.id.startsWith('demo-')
+    )
   );
   return !hasDemoItems;
 };
@@ -99,10 +90,16 @@ export const App: React.FC = () => {
     isOpen: boolean;
     itemIndex: number;
     items: PortfolioItem[];
+    projectTitle?: string;
+    projectList: PortfolioProject[];
+    projectIndex: number;
   }>({
     isOpen: false,
     itemIndex: 0,
     items: [],
+    projectTitle: undefined,
+    projectList: [],
+    projectIndex: -1,
   });
 
   const showToast = useCallback((message: string, isWarning = false) => {
@@ -129,20 +126,13 @@ export const App: React.FC = () => {
     return saved && saved.trim() !== '' ? saved.trim() : DEFAULT_APPS_SCRIPT_URL.trim();
   }, []);
 
-  const loadData = useCallback(async (forceRefresh = false) => {
+  const loadData = useCallback(async (_forceRefresh = false) => {
     const targetUrl = getActiveAppsScriptUrl();
     if (!targetUrl) {
       setIsLoading(false);
       return;
     }
 
-    // If sessionStorage already has fresh live data and this isn't a forced retry, skip network fetch
-    if (!forceRefresh && initialCacheRef.current?.isSessionFresh && hasLiveDataRef.current) {
-      setIsLoading(false);
-      return;
-    }
-
-    // Only show loading shimmer when we don't already have real cached Google Drive data on screen
     if (!hasLiveDataRef.current) {
       setIsLoading(true);
     }
@@ -152,22 +142,32 @@ export const App: React.FC = () => {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 12000);
 
-      const response = await fetch(targetUrl, { signal: controller.signal });
+      const response = await fetch(targetUrl, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
       window.clearTimeout(timeoutId);
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const liveData = (await response.json()) as StudioData;
 
       if (isValidLiveStudioData(liveData)) {
-        hasLiveDataRef.current = true;
-        setStudioData(liveData);
-        setLoadError(false);
-        try {
-          const serialized = JSON.stringify(liveData);
-          sessionStorage.setItem(CACHE_KEY, serialized);
-          localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
-        } catch {
-          // Ignore storage quota errors
+        const hasNewPortfolioItems = liveData.portfolio.length > 0;
+        if (hasNewPortfolioItems || !hasLiveDataRef.current) {
+          if (hasNewPortfolioItems) {
+            hasLiveDataRef.current = true;
+          }
+          setStudioData(liveData);
+          setLoadError(false);
+          if (hasNewPortfolioItems) {
+            try {
+              const serialized = JSON.stringify(liveData);
+              sessionStorage.setItem(CACHE_KEY, serialized);
+              localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
+            } catch {
+              // Ignore storage quota errors
+            }
+          }
         }
       }
     } catch (err) {
@@ -184,31 +184,64 @@ export const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Open shared portfolio item directly if `?work=<id>` is present in the URL
+  // Normalized projects list across all categories
+  const allProjects: PortfolioProject[] = useMemo(
+    () => getAllPortfolioProjects(studioData.portfolio || []),
+    [studioData.portfolio]
+  );
+
+  // Open shared project (`?project=<id>`) or individual item (`?work=<id>`) directly
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || allProjects.length === 0) return;
     const params = new URLSearchParams(window.location.search);
+    const sharedProjectId = params.get('project');
     const sharedWorkId = params.get('work');
-    if (!sharedWorkId || handledDeepLinkRef.current === sharedWorkId) return;
+    const deepLinkKey = sharedProjectId
+      ? `project:${sharedProjectId}`
+      : sharedWorkId
+        ? `work:${sharedWorkId}`
+        : null;
 
-    const allItems: PortfolioItem[] = [];
-    (studioData.portfolio || []).forEach((cat) => {
-      (cat.items || []).forEach((item) => {
-        allItems.push({ ...item, category: cat.category });
-      });
-    });
+    if (!deepLinkKey || handledDeepLinkRef.current === deepLinkKey) return;
 
-    const matchIndex = allItems.findIndex((item) => item.id === sharedWorkId);
-    if (matchIndex !== -1) {
-      handledDeepLinkRef.current = sharedWorkId;
-      setCurrentTab('portfolio');
-      setLightbox({
-        isOpen: true,
-        itemIndex: matchIndex,
-        items: allItems,
-      });
+    if (sharedProjectId) {
+      const matchProjectIdx = allProjects.findIndex((p) => p.id === sharedProjectId);
+      const matchProject = matchProjectIdx !== -1 ? allProjects[matchProjectIdx] : null;
+      if (matchProject && matchProject.items.length > 0) {
+        handledDeepLinkRef.current = deepLinkKey;
+        setCurrentTab('portfolio');
+        setLightbox({
+          isOpen: true,
+          itemIndex: 0,
+          items: matchProject.items,
+          projectTitle: matchProject.isProjectGroup ? matchProject.name : undefined,
+          projectList: allProjects,
+          projectIndex: matchProjectIdx,
+        });
+        return;
+      }
     }
-  }, [studioData, isLoading]);
+
+    if (sharedWorkId) {
+      for (let projIdx = 0; projIdx < allProjects.length; projIdx++) {
+        const proj = allProjects[projIdx];
+        const idx = proj.items.findIndex((item) => item.id === sharedWorkId);
+        if (idx !== -1) {
+          handledDeepLinkRef.current = deepLinkKey;
+          setCurrentTab('portfolio');
+          setLightbox({
+            isOpen: true,
+            itemIndex: idx,
+            items: proj.items,
+            projectTitle: proj.isProjectGroup ? proj.name : undefined,
+            projectList: allProjects,
+            projectIndex: projIdx,
+          });
+          return;
+        }
+      }
+    }
+  }, [allProjects, isLoading]);
 
   const handleSelectTab = (tab: MainTab) => {
     setCurrentTab(tab);
@@ -223,19 +256,38 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleOpenLightbox = (itemIndex: number, filteredItems: PortfolioItem[]) => {
+  const handleOpenLightbox = (
+    itemIndex: number,
+    items: PortfolioItem[],
+    projectTitle?: string,
+    projectList?: PortfolioProject[],
+    projectIndex?: number
+  ) => {
+    const resolvedList = projectList ?? allProjects;
+    const resolvedIndex = typeof projectIndex === 'number' ? projectIndex : -1;
     setLightbox({
       isOpen: true,
       itemIndex,
-      items: filteredItems,
+      items,
+      projectTitle,
+      projectList: resolvedList,
+      projectIndex: resolvedIndex,
     });
   };
 
   const handleCloseLightbox = () => {
     setLightbox((prev) => ({ ...prev, isOpen: false }));
     const url = new URL(window.location.href);
+    let changed = false;
     if (url.searchParams.has('work')) {
       url.searchParams.delete('work');
+      changed = true;
+    }
+    if (url.searchParams.has('project')) {
+      url.searchParams.delete('project');
+      changed = true;
+    }
+    if (changed) {
       window.history.replaceState({}, '', url.toString());
     }
   };
@@ -244,13 +296,30 @@ export const App: React.FC = () => {
     setLightbox((prev) => ({ ...prev, itemIndex: newIndex }));
   };
 
-  // Derive Hero information and curated Featured Spotlight items (real Google Drive works only)
+  const handleJumpProject = (delta: -1 | 1) => {
+    setLightbox((prev) => {
+      const list = prev.projectList;
+      if (!list || list.length <= 1 || prev.projectIndex < 0) return prev;
+      const nextIdx = (prev.projectIndex + delta + list.length) % list.length;
+      const targetProject = list[nextIdx];
+      if (!targetProject || targetProject.items.length === 0) return prev;
+      return {
+        ...prev,
+        projectIndex: nextIdx,
+        itemIndex: 0,
+        items: targetProject.items,
+        projectTitle: targetProject.isProjectGroup ? targetProject.name : undefined,
+      };
+    });
+  };
+
+  // Derive Hero information and curated Featured Spotlight entries
   const {
     heroTitle,
     heroSubtitle,
     totalCategories,
     totalWorks,
-    spotlightItems,
+    spotlightEntries,
   } = useMemo(() => {
     const cvElements = studioData.cv || [];
     const titleEl = cvElements.find((e) => e.heading === 'TITLE');
@@ -266,32 +335,34 @@ export const App: React.FC = () => {
         : rawSubtitle;
 
     const categories = studioData.portfolio || [];
-    const worksCount = categories.reduce(
-      (acc, cat) => acc + (cat.items ? cat.items.length : 0),
-      0
-    );
+    const worksCount = allProjects.reduce((sum, proj) => sum + proj.items.length, 0);
 
-    const featuredImages: PortfolioItem[] = [];
-    const fallbackImages: PortfolioItem[] = [];
+    type SpotlightEntry = {
+      item: PortfolioItem;
+      project: PortfolioProject;
+      itemIndex: number;
+    };
 
-    categories.forEach((cat) => {
-      (cat.items || []).forEach((item) => {
-        if (item.type === 'video') return;
-        const enriched: PortfolioItem = {
-          ...item,
-          category: cat.category,
-          featured: isFeaturedPortfolioItem(item),
-        };
-        if (enriched.featured) {
-          featuredImages.push(enriched);
-        } else {
-          fallbackImages.push(enriched);
-        }
-      });
+    const featuredEntries: SpotlightEntry[] = [];
+    const fallbackEntries: SpotlightEntry[] = [];
+
+    allProjects.forEach((project) => {
+      const firstImageIdx = project.items.findIndex((i) => i.type !== 'video');
+      if (firstImageIdx === -1) return;
+      const entry: SpotlightEntry = {
+        item: project.items[firstImageIdx],
+        project,
+        itemIndex: firstImageIdx,
+      };
+      if (project.featured) {
+        featuredEntries.push(entry);
+      } else {
+        fallbackEntries.push(entry);
+      }
     });
 
     const spotlight = (
-      featuredImages.length > 0 ? featuredImages : fallbackImages
+      featuredEntries.length > 0 ? featuredEntries : fallbackEntries
     ).slice(0, 6);
 
     return {
@@ -299,9 +370,44 @@ export const App: React.FC = () => {
       heroSubtitle: subtitle,
       totalCategories: categories.length,
       totalWorks: worksCount,
-      spotlightItems: spotlight,
+      spotlightEntries: spotlight,
     };
-  }, [studioData]);
+  }, [studioData, allProjects]);
+
+  const spotlightItems = useMemo(
+    () => spotlightEntries.map((entry) => entry.item),
+    [spotlightEntries]
+  );
+
+  const handleOpenSpotlight = (index: number) => {
+    const entry = spotlightEntries[index];
+    if (!entry) return;
+    const projectIndexInAll = allProjects.findIndex((p) => p.id === entry.project.id);
+    if (entry.project.isProjectGroup || entry.project.items.length > 1) {
+      handleOpenLightbox(
+        entry.itemIndex,
+        entry.project.items,
+        entry.project.name || undefined,
+        allProjects,
+        projectIndexInAll
+      );
+    } else {
+      handleOpenLightbox(index, spotlightItems, undefined, allProjects, projectIndexInAll);
+    }
+  };
+
+  const prevProject =
+    lightbox.projectList.length > 1 && lightbox.projectIndex >= 0
+      ? lightbox.projectList[
+          (lightbox.projectIndex - 1 + lightbox.projectList.length) %
+            lightbox.projectList.length
+        ]
+      : null;
+
+  const nextProject =
+    lightbox.projectList.length > 1 && lightbox.projectIndex >= 0
+      ? lightbox.projectList[(lightbox.projectIndex + 1) % lightbox.projectList.length]
+      : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-obsidian text-[#F4F4F5] relative">
@@ -324,7 +430,7 @@ export const App: React.FC = () => {
           worksCount={totalWorks}
           spotlightItems={spotlightItems}
           isLoading={isLoading}
-          onOpenSpotlight={(index) => handleOpenLightbox(index, spotlightItems)}
+          onOpenSpotlight={handleOpenSpotlight}
           onExploreWorks={handleExploreWorks}
           onOpenCV={() => handleSelectTab('cv')}
         />
@@ -351,11 +457,20 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Full-Screen Darkroom 4K Lightbox & Video Theater Modal */}
+      {/* Full-Screen Darkroom 4K Lightbox & Project Filmstrip Modal */}
       <LightboxModal
         isOpen={lightbox.isOpen}
         itemIndex={lightbox.itemIndex}
         items={lightbox.items}
+        projectTitle={lightbox.projectTitle}
+        projectIndex={lightbox.projectIndex >= 0 ? lightbox.projectIndex : undefined}
+        totalProjects={
+          lightbox.projectIndex >= 0 ? lightbox.projectList.length : 0
+        }
+        prevProjectName={prevProject?.isProjectGroup ? prevProject.name : undefined}
+        nextProjectName={nextProject?.isProjectGroup ? nextProject.name : undefined}
+        onPrevProject={() => handleJumpProject(-1)}
+        onNextProject={() => handleJumpProject(1)}
         onClose={handleCloseLightbox}
         onNavigate={handleNavigateLightbox}
       />

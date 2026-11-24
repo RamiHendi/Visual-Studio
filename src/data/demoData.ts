@@ -3,7 +3,7 @@ import { StudioData } from '../types';
 export const DEFAULT_APPS_SCRIPT_URL = 
   "https://script.google.com/macros/s/AKfycbxVzW2yRCNDbPAlNW95B0MTbD2mD6ZXaGGBnMyVIPyj1n9Jgf_ho7RLWI_H5Badu4g/exec";
 
-export const CACHE_KEY = "rami_hendi_visual_studio_cms_cache_v1";
+export const CACHE_KEY = "rami_hendi_visual_studio_cms_cache_v2";
 export const SAVED_URL_KEY = "rami_hendi_custom_apps_script_url";
 
 export const APPS_SCRIPT_TEMPLATE = `const CV_DOC_ID = 'PASTE_YOUR_GOOGLE_DOC_ID_HERE';
@@ -41,39 +41,123 @@ function parseCVDoc(docId) {
   return elements;
 }
 
+function parseMediaFilesInFolder(folder, projectMeta) {
+  const files = folder.getFiles();
+  const fileList = [];
+  while (files.hasNext()) {
+    fileList.push(files.next());
+  }
+  fileList.sort((a, b) => a.getName().localeCompare(b.getName(), undefined, { numeric: true }));
+
+  const items = [];
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    const mime = file.getMimeType();
+    const id = file.getId();
+    const rawTitle = file.getName().replace(/\\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    const desc = file.getDescription() || '';
+    const isFeatured =
+      /\\[featured\\]/i.test(rawTitle) ||
+      /#featured/i.test(desc) ||
+      /featured:\\s*true/i.test(desc);
+
+    const baseItem = {
+      id: id,
+      title: rawTitle,
+      description: desc.replace(/#featured/gi, '').replace(/featured:\\s*true/gi, '').trim(),
+      featured: isFeatured
+    };
+
+    if (projectMeta) {
+      baseItem.projectId = projectMeta.id;
+      baseItem.projectName = projectMeta.name;
+    }
+
+    if (mime.startsWith('image/')) {
+      items.push(Object.assign(baseItem, {
+        type: 'image',
+        thumbUrl: \`https://drive.google.com/thumbnail?id=\${id}&sz=w1000\`,
+        fullUrl: \`https://drive.google.com/thumbnail?id=\${id}&sz=s4000\`
+      }));
+    } else if (mime.startsWith('video/')) {
+      items.push(Object.assign(baseItem, {
+        type: 'video',
+        thumbUrl: \`https://drive.google.com/thumbnail?id=\${id}&sz=w1000\`,
+        embedUrl: \`https://drive.google.com/file/d/\${id}/preview\`
+      }));
+    }
+  }
+  return items;
+}
+
 function parsePortfolioFolders(parentFolderId) {
   const parent = DriveApp.getFolderById(parentFolderId);
-  const subFolders = parent.getFolders();
+  const categoryFolders = parent.getFolders();
   const categories = [];
-  while (subFolders.hasNext()) {
-    const folder = subFolders.next();
-    const rawName = folder.getName();
-    const cleanName = rawName.replace(/^\\d+[_-\\s]*/, '');
-    const files = folder.getFiles();
-    const items = [];
-    while (files.hasNext()) {
-      const file = files.next();
-      const mime = file.getMimeType();
-      const id = file.getId();
-      const title = file.getName().replace(/\\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-      if (mime.startsWith('image/')) {
-        items.push({
-          id, title, description: file.getDescription() || '', type: 'image',
-          thumbUrl: \`https://drive.google.com/thumbnail?id=\${id}&sz=w1000\`,
-          fullUrl: \`https://drive.google.com/thumbnail?id=\${id}&sz=s4000\`
-        });
-      } else if (mime.startsWith('video/')) {
-        items.push({
-          id, title, description: file.getDescription() || '', type: 'video',
-          thumbUrl: \`https://drive.google.com/thumbnail?id=\${id}&sz=w1000\`,
-          embedUrl: \`https://drive.google.com/file/d/\${id}/preview\`
+
+  while (categoryFolders.hasNext()) {
+    const catFolder = categoryFolders.next();
+    const rawOrder = catFolder.getName();
+    const cleanCategory = rawOrder.replace(/^\\d+[_-\\s]*/, '').replace(/_/g, ' ').trim();
+
+    // 1. Scan project subfolders inside this category folder
+    const projectFolders = catFolder.getFolders();
+    const projects = [];
+
+    while (projectFolders.hasNext()) {
+      const projFolder = projectFolders.next();
+      const projRawName = projFolder.getName();
+      const projDesc = projFolder.getDescription() || '';
+      const projName = projRawName
+        .replace(/^\\d+[_-\\s]*/, '')
+        .replace(/\\[featured\\]/gi, '')
+        .replace(/#featured/gi, '')
+        .replace(/_/g, ' ')
+        .replace(/\\s+/g, ' ')
+        .trim();
+
+      const projItems = parseMediaFilesInFolder(projFolder, {
+        id: projFolder.getId(),
+        name: projName
+      });
+
+      if (projItems.length > 0) {
+        const projFeatured =
+          /\\[featured\\]/i.test(projRawName) ||
+          /#featured/i.test(projDesc) ||
+          /featured:\\s*true/i.test(projDesc) ||
+          projItems.some((item) => item.featured === true);
+
+        const coverItem = projItems.find((item) => item.type === 'image') || projItems[0];
+
+        projects.push({
+          id: projFolder.getId(),
+          rawOrder: projRawName,
+          name: projName,
+          description: projDesc.replace(/#featured/gi, '').replace(/featured:\\s*true/gi, '').trim(),
+          featured: projFeatured,
+          coverUrl: coverItem ? coverItem.thumbUrl : '',
+          items: projItems
         });
       }
     }
-    items.sort((a, b) => a.title.localeCompare(b.title));
-    categories.push({ rawOrder: rawName, category: cleanName, items });
+
+    projects.sort((a, b) => a.rawOrder.localeCompare(b.rawOrder, undefined, { numeric: true }));
+
+    // 2. Also keep any loose media files placed directly inside the category folder
+    const looseItems = parseMediaFilesInFolder(catFolder, null);
+
+    if (projects.length > 0 || looseItems.length > 0) {
+      categories.push({
+        rawOrder: rawOrder,
+        category: cleanCategory,
+        projects: projects,
+        items: looseItems
+      });
+    }
   }
-  categories.sort((a, b) => a.rawOrder.localeCompare(b.rawOrder));
+
+  categories.sort((a, b) => a.rawOrder.localeCompare(b.rawOrder, undefined, { numeric: true }));
   return categories;
 }`;
 

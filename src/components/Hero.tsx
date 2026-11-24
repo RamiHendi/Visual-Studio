@@ -246,22 +246,27 @@ export const Hero: React.FC<HeroProps> = ({
               {/* Measured bottom contrast scrim with quiet unboxed metadata & spotlight switcher */}
               {activeSpotlight && (
                 <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-4 sm:px-6 pb-4 pt-14 flex items-end justify-between gap-4 pointer-events-none">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-xs text-zinc-300">
-                    <span className="text-brass font-medium">Featured Spotlight</span>
-                    <span aria-hidden="true" className="text-zinc-500">
-                      ·
-                    </span>
-                    <span className="truncate text-zinc-200">
-                      {activeCategoryLabel}
-                    </span>
+                  <div className="min-w-0">
+                    {activeSpotlight.projectName && (
+                      <div className="font-display text-sm sm:text-base font-medium text-zinc-100 truncate mb-0.5">
+                        {activeSpotlight.projectName}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 text-xs text-zinc-300">
+                      <span className="text-brass font-medium">Featured Spotlight</span>
+                      <span aria-hidden="true" className="text-zinc-500">
+                        ·
+                      </span>
+                      <span className="truncate text-zinc-200">
+                        {activeCategoryLabel}
+                      </span>
+                    </div>
+                    {activeSpotlight.description && (
+                      <p className="text-xs text-zinc-400 mt-1 line-clamp-1 max-w-md">
+                        {activeSpotlight.description}
+                      </p>
+                    )}
                   </div>
-                  {activeSpotlight?.description && (
-                    <p className="text-xs text-zinc-400 mt-1 line-clamp-1 max-w-md">
-                      {activeSpotlight.description}
-                    </p>
-                  )}
-                </div>
 
                 {spotlightItems.length > 1 && (
                   <div
