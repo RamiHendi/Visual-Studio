@@ -47,7 +47,6 @@ export interface StudioData {
 }
 
 export type MainTab = 'portfolio' | 'cv';
-export type GalleryLayout = 'masonry' | 'grid';
 
 export interface CVRole {
   header: string;

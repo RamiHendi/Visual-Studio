@@ -21,22 +21,6 @@ body {
   overflow-x: hidden;
 }
 
-/* Edge-to-Edge Architectural Masonry Layout */
-.masonry-grid {
-  column-count: 1;
-  column-gap: 1.25rem;
-}
-@media (min-width: 640px) {
-  .masonry-grid { column-count: 2; }
-}
-@media (min-width: 1024px) {
-  .masonry-grid { column-count: 3; }
-}
-.masonry-item {
-  break-inside: avoid;
-  margin-bottom: 1.25rem;
-}
-
 /* Minimal Obsidian Scrollbar */
 ::-webkit-scrollbar {
   width: 7px;
@@ -53,13 +37,16 @@ body {
   background: #52D1FF;
 }
 
-/* Smooth Darkroom Lightbox Zoom */
+/* Smooth Darkroom Lightbox Zoom & Pan */
 .lightbox-img-zoomed {
-  transform: scale(1.65);
-  cursor: zoom-out;
+  transform: translate3d(0, 0, 0) scale(1.85);
+  cursor: grab;
+}
+.lightbox-img-zoomed-panning {
+  cursor: grabbing;
 }
 .lightbox-img-normal {
-  transform: scale(1);
+  transform: translate3d(0, 0, 0) scale(1);
   cursor: zoom-in;
 }
 

@@ -28,6 +28,7 @@ interface LightboxModalProps {
 }
 
 const EXIT_ANIMATION_MS = 480;
+const ZOOM_SCALE = 1.85;
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   isOpen,
@@ -44,9 +45,22 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   onNavigate,
 }) => {
   const [isZoomed, setIsZoomed] = useState<boolean>(false);
+  const [isPanning, setIsPanning] = useState<boolean>(false);
   const [displayedSlide, setDisplayedSlide] = useState<ActiveSlide | null>(null);
   const [exitingSlide, setExitingSlide] = useState<ActiveSlide | null>(null);
   const [isTransitioningImage, setIsTransitioningImage] = useState<boolean>(false);
+
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const zoomWrapperRef = useRef<HTMLDivElement | null>(null);
+  const panRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragStateRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const didDragRef = useRef<boolean>(false);
 
   const displayedSlideRef = useRef<ActiveSlide | null>(null);
   const prevItemsRef = useRef<PortfolioItem[]>(items);
@@ -154,9 +168,26 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       setExitingSlide(null);
       setIsTransitioningImage(false);
       setIsZoomed(false);
+      setIsPanning(false);
+      panRef.current = { x: 0, y: 0 };
+      dragStateRef.current = null;
+      didDragRef.current = false;
       pendingDirectionRef.current = 'fade';
     }
   }, [isOpen]);
+
+  // Reset pan offset whenever zoom turns off or active slide changes
+  useEffect(() => {
+    if (!isZoomed) {
+      panRef.current = { x: 0, y: 0 };
+      dragStateRef.current = null;
+      didDragRef.current = false;
+      setIsPanning(false);
+      if (zoomWrapperRef.current) {
+        zoomWrapperRef.current.style.transform = '';
+      }
+    }
+  }, [isZoomed, displayedSlide?.key]);
 
   // Cleanup exit timer on unmount
   useEffect(() => {
@@ -391,6 +422,78 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     e.preventDefault();
   };
 
+  const clampPan = (x: number, y: number): { x: number; y: number } => {
+    const stageEl = stageRef.current;
+    const mediaEl = zoomWrapperRef.current;
+    if (!stageEl || !mediaEl) return { x, y };
+
+    const stageW = stageEl.clientWidth;
+    const stageH = stageEl.clientHeight;
+    const scaledW = mediaEl.offsetWidth * ZOOM_SCALE;
+    const scaledH = mediaEl.offsetHeight * ZOOM_SCALE;
+
+    const maxPanX = scaledW > stageW ? (scaledW - stageW) / 2 + 32 : 0;
+    const maxPanY = scaledH > stageH ? (scaledH - stageH) / 2 + 32 : 0;
+
+    return {
+      x: Math.max(-maxPanX, Math.min(maxPanX, x)),
+      y: Math.max(-maxPanY, Math.min(maxPanY, y)),
+    };
+  };
+
+  const handleZoomPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isZoomed) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    e.preventDefault();
+    didDragRef.current = false;
+    dragStateRef.current = {
+      pointerId: e.pointerId,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      startX: panRef.current.x,
+      startY: panRef.current.y,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsPanning(true);
+  };
+
+  const handleZoomPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== e.pointerId || !isZoomed) return;
+
+    const dx = e.clientX - drag.clientX;
+    const dy = e.clientY - drag.clientY;
+    if (!didDragRef.current && Math.hypot(dx, dy) > 4) {
+      didDragRef.current = true;
+    }
+
+    const next = clampPan(drag.startX + dx, drag.startY + dy);
+    panRef.current = next;
+    if (zoomWrapperRef.current) {
+      zoomWrapperRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${ZOOM_SCALE})`;
+    }
+  };
+
+  const handleZoomPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    dragStateRef.current = null;
+    setIsPanning(false);
+  };
+
+  const handleImageClick = () => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+    setIsZoomed((z) => !z);
+  };
+
   const renderSlideMedia = (slide: ActiveSlide, interactive: boolean) => {
     const slideIsVideo = slide.item.type === 'video';
     const slideCategory = (slide.item.category || 'Selected Work').replace(/_/g, ' ');
@@ -432,11 +535,24 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
     return (
       <div
-        onClick={interactive ? () => setIsZoomed((z) => !z) : undefined}
+        ref={interactive ? zoomWrapperRef : undefined}
+        onClick={interactive ? handleImageClick : undefined}
+        onPointerDown={interactive ? handleZoomPointerDown : undefined}
+        onPointerMove={interactive ? handleZoomPointerMove : undefined}
+        onPointerUp={interactive ? handleZoomPointerEnd : undefined}
+        onPointerCancel={interactive ? handleZoomPointerEnd : undefined}
         onContextMenu={blockMediaAction}
         onDragStart={blockMediaAction}
-        className={`relative inline-flex items-center justify-center rounded-sm overflow-hidden transition-transform duration-300 protected-media ${
-          interactive && isZoomed ? 'lightbox-img-zoomed' : 'lightbox-img-normal'
+        className={`relative inline-flex items-center justify-center rounded-sm overflow-hidden protected-media ${
+          interactive && isPanning
+            ? 'transition-none'
+            : 'transition-transform duration-300 ease-out'
+        } ${
+          interactive && isZoomed
+            ? `lightbox-img-zoomed touch-none ${
+                isPanning ? 'lightbox-img-zoomed-panning' : ''
+              }`
+            : 'lightbox-img-normal'
         }`}
       >
         <img
@@ -567,6 +683,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
         {/* Dual-Layer Protected Media Stage (Outgoing & Incoming Animate Simultaneously) */}
         <div
+          ref={stageRef}
           onContextMenu={blockMediaAction}
           onDragStart={blockMediaAction}
           className="relative w-full h-full overflow-hidden protected-media"
@@ -588,9 +705,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           {displayedSlide ? (
             <div
               key={`active-${displayedSlide.key}`}
-              className={`absolute inset-0 z-20 flex items-center justify-center p-2 ${
-                isZoomed ? 'overflow-auto' : 'overflow-hidden'
-              } ${getEnterClass(displayedSlide.direction)}`}
+              className={`absolute inset-0 z-20 flex items-center justify-center p-2 overflow-hidden ${getEnterClass(
+                displayedSlide.direction
+              )}`}
             >
               {renderSlideMedia(displayedSlide, true)}
             </div>
@@ -610,6 +727,22 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             className="absolute right-2 sm:right-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
             <i className="fa-solid fa-chevron-right text-xs"></i>
+          </button>
+        )}
+
+        {/* Corner Reset Zoom Button (visible while zoomed in) */}
+        {!isVideo && isZoomed && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsZoomed(false);
+            }}
+            aria-label="Reset zoom to default view"
+            className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 z-30 px-2.5 py-1.5 rounded-sm bg-obsidian/85 hover:bg-brass hover:text-obsidian backdrop-blur-md border border-white/15 hover:border-brass text-xs font-medium text-zinc-200 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shadow-lg"
+          >
+            <i className="fa-solid fa-rotate-left text-[10px]"></i>
+            <span>Reset Zoom</span>
           </button>
         )}
       </div>

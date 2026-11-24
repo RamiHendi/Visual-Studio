@@ -1,17 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GalleryLayout } from '../types';
 
 interface LazyThumbnailProps {
   src: string;
   alt: string;
-  layout: GalleryLayout;
   eager?: boolean;
 }
 
 export const LazyThumbnail: React.FC<LazyThumbnailProps> = ({
   src,
   alt,
-  layout,
   eager = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -65,24 +62,12 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = ({
     }
   }, [shouldLoad, src]);
 
-  const containerSizeClass =
-    layout === 'grid'
-      ? 'aspect-[16/10]'
-      : isLoaded || hasError
-        ? ''
-        : 'min-h-[240px]';
-
-  const imageAspectClass =
-    layout === 'grid'
-      ? 'w-full h-full object-cover'
-      : 'w-full h-auto object-cover';
-
   return (
     <div
       ref={containerRef}
       onContextMenu={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
-      className={`relative w-full overflow-hidden bg-charcoal protected-media ${containerSizeClass}`}
+      className="relative w-full aspect-[16/10] overflow-hidden bg-charcoal protected-media"
     >
       {/* Quiet architectural shimmer shown until image enters viewport & finishes decoding */}
       {!isLoaded && !hasError && (
@@ -120,7 +105,7 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = ({
               setHasError(true);
               setIsLoaded(true);
             }}
-            className={`${imageAspectClass} block protected-img transform group-hover:scale-[1.03] transition-[transform,opacity] duration-500 ease-out ${
+            className={`w-full h-full object-cover block protected-img transform group-hover:scale-[1.03] transition-[transform,opacity] duration-500 ease-out ${
               isLoaded ? 'opacity-100' : 'opacity-0'
             }`}
           />

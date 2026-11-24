@@ -3,7 +3,6 @@ import {
   PortfolioCategory,
   PortfolioItem,
   PortfolioProject,
-  GalleryLayout,
 } from '../types';
 import { getCategoryProjects } from '../utils/portfolioProjects';
 import { LazyThumbnail } from './LazyThumbnail';
@@ -49,7 +48,6 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyFeatured, setOnlyFeatured] = useState<boolean>(false);
-  const [layout, setLayout] = useState<GalleryLayout>('masonry');
   const [copiedProjectId, setCopiedProjectId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
 
@@ -379,7 +377,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           })}
         </div>
 
-        {/* Right Controls: Featured Checkbox, Search & Layout Switcher */}
+        {/* Right Controls: Featured Checkbox & Search */}
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full lg:w-auto">
           {/* Featured Checkbox Filter */}
           <label
@@ -430,43 +428,13 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
               </button>
             )}
           </div>
-
-          {/* Layout Switcher (Masonry vs Uniform Grid) */}
-          <div className="flex items-center bg-charcoal p-0.5 h-9 rounded-sm border border-white/[0.09] shrink-0">
-            <button
-              type="button"
-              onClick={() => setLayout('masonry')}
-              title="Masonry Layout"
-              aria-label="Masonry Layout"
-              className={`h-8 w-8 flex items-center justify-center rounded-[1px] text-xs transition-colors duration-150 cursor-pointer ${
-                layout === 'masonry'
-                  ? 'bg-brass text-obsidian font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-100'
-              }`}
-            >
-              <i className="fa-solid fa-table-columns text-[11px]"></i>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayout('grid')}
-              title="Grid Layout"
-              aria-label="Grid Layout"
-              className={`h-8 w-8 flex items-center justify-center rounded-[1px] text-xs transition-colors duration-150 cursor-pointer ${
-                layout === 'grid'
-                  ? 'bg-brass text-obsidian font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-100'
-              }`}
-            >
-              <i className="fa-solid fa-border-all text-[11px]"></i>
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Empty State */}
       {filteredProjects.length === 0 ? (
         <div
-          key={`empty::${activeCategory}::${onlyFeatured}::${layout}`}
+          key={`empty::${activeCategory}::${onlyFeatured}`}
           className="studio-card-enter text-center py-20 border border-white/[0.08] bg-charcoal/50 rounded-sm px-6"
         >
           <h3 className="font-display text-lg font-medium text-zinc-100">
@@ -488,17 +456,12 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           </button>
         </div>
       ) : (
-        /* Edge-to-Edge Frameless Project Gallery */
+        /* Edge-to-Edge Frameless Uniform Grid Project Gallery */
         <div
-          key={`${activeCategory}::${onlyFeatured}::${layout}`}
-          className={
-            layout === 'masonry'
-              ? 'masonry-grid'
-              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5'
-          }
+          key={`${activeCategory}::${onlyFeatured}`}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
         >
           {filteredProjects.map((project, idx) => {
-            const itemWrapperClass = layout === 'masonry' ? 'masonry-item' : '';
             const categoryLabel = (project.category || 'Portfolio').replace(/_/g, ' ');
             const isVideoOnly =
               project.items.length > 0 &&
@@ -513,7 +476,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                 onClick={() => handleOpenProjectCard(project, idx)}
                 onContextMenu={(e) => e.preventDefault()}
                 onDragStart={(e) => e.preventDefault()}
-                className={`${itemWrapperClass} studio-card-enter protected-media group relative rounded-sm overflow-hidden bg-charcoal cursor-pointer`}
+                className="studio-card-enter protected-media group relative rounded-sm overflow-hidden bg-charcoal cursor-pointer"
               >
                 {/* Edge-to-Edge Protected Project Cover Media */}
                 <div className="relative overflow-hidden bg-charcoal">
@@ -524,7 +487,6 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                         ? `${project.name} — ${categoryLabel}`
                         : `${categoryLabel} showcase`
                     }
-                    layout={layout}
                     eager={idx < 3}
                   />
 
