@@ -25,7 +25,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     setIsZoomed(false);
   }, [itemIndex]);
 
-  // Keyboard navigation & body lock
+  // Keyboard navigation, silent Ctrl/Cmd+S guard & body scroll lock
   useEffect(() => {
     if (!isOpen) return;
 
@@ -33,6 +33,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        return;
+      }
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowRight') {
@@ -52,7 +56,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   if (!isOpen || !currentItem) return null;
 
   const isVideo = currentItem.type === 'video';
-  const openUrl = isVideo ? currentItem.embedUrl : (currentItem.fullUrl || currentItem.thumbUrl);
+  const categoryLabel = (currentItem.category || 'Selected Work').replace(/_/g, ' ');
+  const paddedIndex = String(itemIndex + 1).padStart(2, '0');
+  const paddedTotal = String(items.length).padStart(2, '0');
+  const videoEmbedUrl = (currentItem.embedUrl || '').trim();
+  const imageDisplayUrl = (currentItem.fullUrl || currentItem.thumbUrl || '').trim();
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -64,119 +72,158 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     onNavigate((itemIndex + 1) % items.length);
   };
 
+  const blockMediaAction = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+  };
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 select-none animate-in fade-in duration-200"
+      onContextMenu={blockMediaAction}
+      onDragStart={blockMediaAction}
+      className="fixed inset-0 z-50 bg-darkroom/98 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 protected-media"
     >
-      {/* Top Lightbox Bar */}
-      <div className="flex items-center justify-between gap-4 z-20">
-        <div className="flex items-center gap-3">
-          <span className="px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-mono">
-            {currentItem.category || 'Render'}
+      {/* Top Darkroom Bar (Clean Unboxed Metadata, No New-Tab Button) */}
+      <div className="flex items-center justify-between gap-4 z-20 pb-3 border-b border-white/[0.08]">
+        <div className="flex items-center gap-3 text-xs">
+          <span className="font-medium text-zinc-100">{categoryLabel}</span>
+          <span aria-hidden="true" className="text-zinc-600">
+            ·
           </span>
-          <span className="text-xs font-mono text-gray-400">
-            {itemIndex + 1} / {items.length}
+          <span className="font-mono text-zinc-400 tabular-nums">
+            {paddedIndex} / {paddedTotal}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
           {!isVideo && (
             <button
+              type="button"
               onClick={() => setIsZoomed(!isZoomed)}
               title={isZoomed ? 'Zoom Out' : 'Zoom 4K View'}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition-all cursor-pointer"
+              aria-label={isZoomed ? 'Zoom Out' : 'Zoom 4K View'}
+              className="w-9 h-9 rounded-sm bg-charcoal hover:bg-panel border border-white/10 text-zinc-200 hover:text-zinc-100 text-xs flex items-center justify-center transition-colors duration-150 cursor-pointer"
             >
-              <i className={isZoomed ? 'fa-solid fa-magnifying-glass-minus' : 'fa-solid fa-magnifying-glass-plus'}></i>
+              <i
+                className={
+                  isZoomed
+                    ? 'fa-solid fa-magnifying-glass-minus'
+                    : 'fa-solid fa-magnifying-glass-plus'
+                }
+              ></i>
             </button>
           )}
 
-          {openUrl && (
-            <a
-              href={openUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open Full Resolution in New Tab"
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition-all flex items-center justify-center cursor-pointer"
-            >
-              <i className="fa-solid fa-up-right-from-square"></i>
-            </a>
-          )}
-
           <button
+            type="button"
             onClick={onClose}
             title="Close (Esc)"
-            className="p-2.5 rounded-xl bg-white/10 hover:bg-red-500/80 text-white text-sm transition-all cursor-pointer"
+            aria-label="Close fullscreen viewer"
+            className="w-9 h-9 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-zinc-200 text-sm flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i className="fa-solid fa-xmark text-base px-0.5"></i>
+            <i className="fa-solid fa-xmark"></i>
           </button>
         </div>
       </div>
 
-      {/* Center Media Stage */}
+      {/* Center Darkroom Media Stage */}
       <div className="relative flex-1 flex items-center justify-center overflow-hidden my-4">
         {/* Previous Button */}
         {items.length > 1 && (
           <button
+            type="button"
             onClick={handlePrev}
-            className="absolute left-2 sm:left-4 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-amber-500 hover:text-black text-white border border-white/15 flex items-center justify-center transition-all cursor-pointer shadow-lg"
+            aria-label="Previous work"
+            className="absolute left-2 sm:left-4 z-20 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i className="fa-solid fa-chevron-left"></i>
+            <i className="fa-solid fa-chevron-left text-xs"></i>
           </button>
         )}
 
-        {/* Media Container */}
-        <div className="w-full h-full flex items-center justify-center overflow-auto p-2">
+        {/* Protected Media Container */}
+        <div
+          onContextMenu={blockMediaAction}
+          onDragStart={blockMediaAction}
+          className="w-full h-full flex items-center justify-center overflow-auto p-2 protected-media"
+        >
           {isVideo ? (
-            <div className="w-full max-w-5xl aspect-video rounded-2xl overflow-hidden border border-white/15 bg-black shadow-2xl">
-              <iframe
-                src={currentItem.embedUrl}
-                title={currentItem.title}
-                className="w-full h-full"
-                allow="autoplay; fullscreen; picture-in-picture"
-                allowFullScreen
-              ></iframe>
+            <div className="w-full max-w-5xl aspect-video rounded-sm overflow-hidden border border-white/10 bg-black flex items-center justify-center">
+              {videoEmbedUrl ? (
+                <iframe
+                  src={videoEmbedUrl}
+                  title={`${categoryLabel} video`}
+                  className="w-full h-full"
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              ) : (
+                <span className="font-mono text-xs text-zinc-500">
+                  Video preview unavailable
+                </span>
+              )}
             </div>
-          ) : (
-            <img
-              src={currentItem.fullUrl || currentItem.thumbUrl}
-              alt={currentItem.title}
+          ) : imageDisplayUrl ? (
+            <div
               onClick={() => setIsZoomed(!isZoomed)}
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = currentItem.thumbUrl;
-              }}
-              className={`max-h-full max-w-full object-contain rounded-xl transition-transform duration-300 shadow-2xl ${
+              onContextMenu={blockMediaAction}
+              onDragStart={blockMediaAction}
+              className={`relative inline-flex items-center justify-center rounded-sm overflow-hidden transition-transform duration-300 protected-media ${
                 isZoomed ? 'lightbox-img-zoomed' : 'lightbox-img-normal'
               }`}
-            />
+            >
+              <img
+                src={imageDisplayUrl}
+                alt={`${categoryLabel} showcase`}
+                draggable={false}
+                referrerPolicy="no-referrer"
+                onContextMenu={blockMediaAction}
+                onDragStart={blockMediaAction}
+                onError={(e) => {
+                  const fallback = (currentItem.thumbUrl || '').trim();
+                  if (fallback && (e.target as HTMLImageElement).src !== fallback) {
+                    (e.target as HTMLImageElement).src = fallback;
+                  }
+                }}
+                className="block max-h-[calc(100vh-13rem)] sm:max-h-[calc(100vh-12rem)] max-w-full w-auto h-auto object-contain protected-img"
+              />
+              {/* Transparent protective shield above the full-resolution image */}
+              <div
+                aria-hidden="true"
+                onContextMenu={blockMediaAction}
+                onDragStart={blockMediaAction}
+                className="absolute inset-0 z-10 bg-transparent protected-media"
+              />
+            </div>
+          ) : (
+            <div className="px-8 py-12 bg-charcoal border border-white/10 rounded-sm text-center">
+              <span className="font-mono text-xs text-zinc-500">
+                Image preview unavailable
+              </span>
+            </div>
           )}
         </div>
 
         {/* Next Button */}
         {items.length > 1 && (
           <button
+            type="button"
             onClick={handleNext}
-            className="absolute right-2 sm:right-4 z-20 w-11 h-11 rounded-full bg-black/60 hover:bg-amber-500 hover:text-black text-white border border-white/15 flex items-center justify-center transition-all cursor-pointer shadow-lg"
+            aria-label="Next work"
+            className="absolute right-2 sm:right-4 z-20 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i className="fa-solid fa-chevron-right"></i>
+            <i className="fa-solid fa-chevron-right text-xs"></i>
           </button>
         )}
       </div>
 
-      {/* Bottom Caption & Metadata Bar */}
-      <div className="max-w-4xl mx-auto w-full bg-charcoal/90 border border-white/10 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 z-20">
-        <div>
-          <h3 className="font-display text-lg font-bold text-white">
-            {currentItem.title}
-          </h3>
-          <p className="text-xs sm:text-sm text-gray-300 mt-0.5">
-            {currentItem.description || "Rendered in Rami Hendi's Visual Studio."}
-          </p>
-        </div>
-        <div className="text-[11px] font-mono text-gray-400 shrink-0">
-          Use <kbd className="px-1.5 py-0.5 bg-obsidian rounded border border-white/10 text-gray-300">←</kbd>{' '}
-          <kbd className="px-1.5 py-0.5 bg-obsidian rounded border border-white/10 text-gray-300">→</kbd> keys to navigate
+      {/* Bottom Hairline Caption Bar */}
+      <div className="pt-3 border-t border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-2 z-20">
+        <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
+          {currentItem.description || "Rami Hendi's Visual Studio"}
+        </p>
+        <div className="text-[11px] font-mono text-zinc-500 shrink-0">
+          Use ← / → keys to navigate · Esc to close
         </div>
       </div>
     </div>

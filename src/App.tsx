@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { StudioData, MainTab, PortfolioItem, ToastState } from './types';
 import {
   DEFAULT_APPS_SCRIPT_URL,
@@ -10,18 +10,26 @@ import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StudioShowcase } from './components/StudioShowcase';
 import { InteractiveCV } from './components/InteractiveCV';
-import { CMSConnection } from './components/CMSConnection';
 import { LightboxModal } from './components/LightboxModal';
 import { Toast } from './components/Toast';
 import { Footer } from './components/Footer';
+import { AmbientGeometry } from './components/AmbientGeometry';
+
+const isFeaturedPortfolioItem = (item: PortfolioItem): boolean => {
+  if (item.featured === true) return true;
+  const title = (item.title || '').toLowerCase();
+  const desc = (item.description || '').toLowerCase();
+  return (
+    title.includes('[featured]') ||
+    desc.includes('#featured') ||
+    desc.includes('featured: true')
+  );
+};
 
 export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<MainTab>('portfolio');
   const [studioData, setStudioData] = useState<StudioData>(DEMO_STUDIO_DATA);
-  const [isLive, setIsLive] = useState<boolean>(false);
-  const [syncLabel, setSyncLabel] = useState<string>('Demo Studio Mode');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Toast state
   const [toast, setToast] = useState<ToastState>({
@@ -29,6 +37,8 @@ export const App: React.FC = () => {
     message: '',
     isWarning: false,
   });
+  const toastTimerRef = useRef<number | null>(null);
+  const handledDeepLinkRef = useRef<string | null>(null);
 
   // Lightbox state
   const [lightbox, setLightbox] = useState<{
@@ -42,10 +52,22 @@ export const App: React.FC = () => {
   });
 
   const showToast = useCallback((message: string, isWarning = false) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
     setToast({ show: true, message, isWarning });
-    setTimeout(() => {
+    toastTimerRef.current = window.setTimeout(() => {
       setToast((prev) => ({ ...prev, show: false }));
-    }, 3800);
+      toastTimerRef.current = null;
+    }, 3200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
   }, []);
 
   const getActiveAppsScriptUrl = useCallback((): string => {
@@ -53,19 +75,17 @@ export const App: React.FC = () => {
     return saved && saved.trim() !== '' ? saved.trim() : DEFAULT_APPS_SCRIPT_URL.trim();
   }, []);
 
-  const loadData = useCallback(async (forceRefresh = false) => {
+  const loadData = useCallback(async () => {
     const targetUrl = getActiveAppsScriptUrl();
 
-    // 1. Check sessionStorage cache first if not forcing refresh
-    if (!forceRefresh && targetUrl) {
+    // Check sessionStorage cache first
+    if (targetUrl) {
       const cached = sessionStorage.getItem(CACHE_KEY);
       if (cached) {
         try {
           const parsed = JSON.parse(cached) as StudioData;
           if (parsed && Array.isArray(parsed.portfolio)) {
             setStudioData(parsed);
-            setIsLive(true);
-            setSyncLabel('Live Google Drive (Cached)');
             return;
           }
         } catch {
@@ -74,7 +94,7 @@ export const App: React.FC = () => {
       }
     }
 
-    // 2. Fetch live data if URL available
+    // Fetch live data if URL configured
     if (targetUrl) {
       setIsLoading(true);
       try {
@@ -87,55 +107,62 @@ export const App: React.FC = () => {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const liveData = (await response.json()) as StudioData;
 
-        if (!liveData || !Array.isArray(liveData.portfolio)) {
-          throw new Error('Invalid JSON structure from Google Apps Script');
+        if (liveData && Array.isArray(liveData.portfolio)) {
+          setStudioData(liveData);
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(liveData));
         }
-
-        setStudioData(liveData);
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify(liveData));
-        setIsLive(true);
-        setSyncLabel('Live Google Drive Sync');
-        showToast('Synced live with Google Drive & CV Doc!');
       } catch (err) {
-        console.warn('Falling back to Demo Studio Mode:', err);
+        console.warn('Using built-in Studio data:', err);
         setStudioData(DEMO_STUDIO_DATA);
-        setIsLive(false);
-        setSyncLabel('Demo Fallback (Check URL)');
-        showToast('Could not reach Apps Script URL. Showing Demo Studio works.', true);
       } finally {
         setIsLoading(false);
       }
     } else {
       setStudioData(DEMO_STUDIO_DATA);
-      setIsLive(false);
-      setSyncLabel('Demo Studio Mode');
     }
-  }, [getActiveAppsScriptUrl, showToast]);
+  }, [getActiveAppsScriptUrl]);
 
   useEffect(() => {
-    loadData(false);
+    loadData();
   }, [loadData]);
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    sessionStorage.removeItem(CACHE_KEY);
-    await loadData(true);
-    setTimeout(() => setIsRefreshing(false), 500);
+  // Open shared portfolio item directly if `?work=<id>` is present in the URL
+  useEffect(() => {
+    if (isLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedWorkId = params.get('work');
+    if (!sharedWorkId || handledDeepLinkRef.current === sharedWorkId) return;
+
+    const allItems: PortfolioItem[] = [];
+    (studioData.portfolio || []).forEach((cat) => {
+      (cat.items || []).forEach((item) => {
+        allItems.push({ ...item, category: cat.category });
+      });
+    });
+
+    const matchIndex = allItems.findIndex((item) => item.id === sharedWorkId);
+    if (matchIndex !== -1) {
+      handledDeepLinkRef.current = sharedWorkId;
+      setCurrentTab('portfolio');
+      setLightbox({
+        isOpen: true,
+        itemIndex: matchIndex,
+        items: allItems,
+      });
+    }
+  }, [studioData, isLoading]);
+
+  const handleSelectTab = (tab: MainTab) => {
+    setCurrentTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSaveUrl = async (url: string) => {
-    localStorage.setItem(SAVED_URL_KEY, url);
-    sessionStorage.removeItem(CACHE_KEY);
-    await loadData(true);
+  const handleExploreWorks = () => {
     setCurrentTab('portfolio');
-  };
-
-  const handleResetDemo = async () => {
-    localStorage.removeItem(SAVED_URL_KEY);
-    sessionStorage.removeItem(CACHE_KEY);
-    await loadData(true);
-    showToast('Reset to built-in Demo Studio Mode.');
-    setCurrentTab('portfolio');
+    const showcase = document.getElementById('studio-showcase');
+    if (showcase) {
+      showcase.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   const handleOpenLightbox = (itemIndex: number, filteredItems: PortfolioItem[]) => {
@@ -148,22 +175,37 @@ export const App: React.FC = () => {
 
   const handleCloseLightbox = () => {
     setLightbox((prev) => ({ ...prev, isOpen: false }));
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('work')) {
+      url.searchParams.delete('work');
+      window.history.replaceState({}, '', url.toString());
+    }
   };
 
   const handleNavigateLightbox = (newIndex: number) => {
     setLightbox((prev) => ({ ...prev, itemIndex: newIndex }));
   };
 
-  // Derive Hero information
-  const { heroTitle, heroSubtitle, totalCategories, totalWorks } = useMemo(() => {
+  // Derive Hero information and curated Featured Spotlight items
+  const {
+    heroTitle,
+    heroSubtitle,
+    totalCategories,
+    totalWorks,
+    spotlightItems,
+  } = useMemo(() => {
     const cvElements = studioData.cv || [];
     const titleEl = cvElements.find((e) => e.heading === 'TITLE');
     const subtitleEl = cvElements.find((e) => e.heading === 'SUBTITLE');
 
     const title = titleEl?.text || 'Rami Hendi';
+    const rawSubtitle = subtitleEl?.text?.trim();
     const subtitle =
-      subtitleEl?.text ||
-      'Senior 3D Visualizer, Architectural Renderer & Technical Artist | 6+ Years Experience';
+      !rawSubtitle ||
+      rawSubtitle ===
+        'Senior 3D Visualizer, Architectural Renderer & Technical Artist | 6+ Years Experience'
+        ? '3D Artist (Generalist) | 10+ Years of Experience'
+        : rawSubtitle;
 
     const categories = studioData.portfolio || [];
     const worksCount = categories.reduce(
@@ -171,47 +213,72 @@ export const App: React.FC = () => {
       0
     );
 
+    const featuredImages: PortfolioItem[] = [];
+    const fallbackImages: PortfolioItem[] = [];
+
+    categories.forEach((cat) => {
+      (cat.items || []).forEach((item) => {
+        if (item.type === 'video') return;
+        const enriched: PortfolioItem = {
+          ...item,
+          category: cat.category,
+          featured: isFeaturedPortfolioItem(item),
+        };
+        if (enriched.featured) {
+          featuredImages.push(enriched);
+        } else {
+          fallbackImages.push(enriched);
+        }
+      });
+    });
+
+    const spotlight = (
+      featuredImages.length > 0 ? featuredImages : fallbackImages
+    ).slice(0, 6);
+
     return {
       heroTitle: title,
       heroSubtitle: subtitle,
       totalCategories: categories.length,
       totalWorks: worksCount,
+      spotlightItems: spotlight,
     };
   }, [studioData]);
 
   return (
-    <div className="min-h-screen flex flex-col studio-grid-bg text-[#F3F4F6] relative">
-      {/* Ambient Rim Lighting Layer */}
-      <div className="fixed inset-0 pointer-events-none studio-radial-glow z-0"></div>
+    <div className="min-h-screen flex flex-col bg-obsidian text-[#F4F4F5] relative">
+      {/* Subtle Ambient Glowing Geometric Background Layer */}
+      <AmbientGeometry />
 
-      {/* Top Sticky Navigation Bar */}
+      {/* Top Sticky 3-Zone Monograph Navigation Bar */}
       <Header
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        isLive={isLive}
-        syncLabel={syncLabel}
-        isRefreshing={isRefreshing}
-        onRefresh={handleRefresh}
+        onSelectTab={handleSelectTab}
         cvPdfUrl={studioData.cvPdfUrl}
-        onOpenCMS={() => setCurrentTab('cms')}
       />
 
-      {/* Hero Section */}
-      <Hero
-        title={heroTitle}
-        subtitle={heroSubtitle}
-        categoriesCount={totalCategories}
-        worksCount={totalWorks}
-        isLive={isLive}
-      />
+      {/* Split Monograph Hero on Portfolio View */}
+      {currentTab === 'portfolio' && (
+        <Hero
+          title={heroTitle}
+          subtitle={heroSubtitle}
+          categoriesCount={totalCategories}
+          worksCount={totalWorks}
+          spotlightItems={spotlightItems}
+          onOpenSpotlight={(index) => handleOpenLightbox(index, spotlightItems)}
+          onExploreWorks={handleExploreWorks}
+          onOpenCV={() => handleSelectTab('cv')}
+        />
+      )}
 
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {currentTab === 'portfolio' && (
           <StudioShowcase
             categories={studioData.portfolio || []}
             isLoading={isLoading}
             onOpenLightbox={handleOpenLightbox}
+            onShowToast={showToast}
           />
         )}
 
@@ -221,18 +288,9 @@ export const App: React.FC = () => {
             cvPdfUrl={studioData.cvPdfUrl}
           />
         )}
-
-        {currentTab === 'cms' && (
-          <CMSConnection
-            currentUrl={getActiveAppsScriptUrl()}
-            onSaveUrl={handleSaveUrl}
-            onResetDemo={handleResetDemo}
-            onShowToast={showToast}
-          />
-        )}
       </main>
 
-      {/* Full-Screen 4K Lightbox & Video Theater Modal */}
+      {/* Full-Screen Darkroom 4K Lightbox & Video Theater Modal */}
       <LightboxModal
         isOpen={lightbox.isOpen}
         itemIndex={lightbox.itemIndex}
@@ -248,8 +306,8 @@ export const App: React.FC = () => {
         isWarning={toast.isWarning}
       />
 
-      {/* Footer */}
-      <Footer onSelectTab={setCurrentTab} />
+      {/* Quiet Architectural Footer */}
+      <Footer onSelectTab={handleSelectTab} />
     </div>
   );
 };

@@ -13,6 +13,7 @@ export interface PortfolioItem {
   fullUrl?: string;
   embedUrl?: string;
   category?: string;
+  featured?: boolean;
 }
 
 export interface PortfolioCategory {
@@ -29,7 +30,7 @@ export interface StudioData {
   portfolio: PortfolioCategory[];
 }
 
-export type MainTab = 'portfolio' | 'cv' | 'cms';
+export type MainTab = 'portfolio' | 'cv';
 export type GalleryLayout = 'masonry' | 'grid';
 
 export interface CVRole {

@@ -1,39 +1,30 @@
 @import "tailwindcss";
 
 @theme {
-  --color-obsidian: #090A0F;
-  --color-charcoal: #12151E;
-  --color-panel: #181C28;
-  --color-amberGlow: #F59E0B;
-  --color-cyanRim: #06B6D4;
+  --color-obsidian: #0A0A0B;
+  --color-darkroom: #050505;
+  --color-charcoal: #111114;
+  --color-panel: #17171B;
+  --color-brass: #52D1FF;
+  --color-brassHover: #7BE0FF;
 
-  --font-sans: 'Inter', sans-serif;
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: 'Manrope', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 }
 
 body {
-  background-color: #090A0F;
-  color: #F3F4F6;
+  background-color: #0A0A0B;
+  color: #F4F4F5;
+  font-family: var(--font-sans);
+  letter-spacing: 0.01em;
   overflow-x: hidden;
 }
 
-.studio-grid-bg {
-  background-size: 40px 40px;
-  background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-}
-
-.studio-radial-glow {
-  background: radial-gradient(circle at 20% 15%, rgba(245, 158, 11, 0.12), transparent 45%),
-              radial-gradient(circle at 80% 25%, rgba(6, 182, 212, 0.10), transparent 50%);
-}
-
-/* Masonry Layout Support */
+/* Edge-to-Edge Architectural Masonry Layout */
 .masonry-grid {
   column-count: 1;
-  column-gap: 1.5rem;
+  column-gap: 1.25rem;
 }
 @media (min-width: 640px) {
   .masonry-grid { column-count: 2; }
@@ -43,26 +34,26 @@ body {
 }
 .masonry-item {
   break-inside: avoid;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
-/* Custom Scrollbar */
+/* Minimal Obsidian Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: #090A0F;
+  background: #0A0A0B;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262B3D;
-  border-radius: 4px;
+  background: #27272A;
+  border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #F59E0B;
+  background: #52D1FF;
 }
 
-/* Smooth Lightbox Zoom */
+/* Smooth Darkroom Lightbox Zoom */
 .lightbox-img-zoomed {
   transform: scale(1.65);
   cursor: zoom-out;
@@ -79,4 +70,170 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Studio Showcase Category Transition Animation (Compositor-Only) */
+@keyframes studioFadeSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.studio-card-enter {
+  animation: studioFadeSlideDown 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Subtle staggered cascade (45ms step, capped at 360ms) */
+.studio-card-enter:nth-child(1) { animation-delay: 0ms; }
+.studio-card-enter:nth-child(2) { animation-delay: 45ms; }
+.studio-card-enter:nth-child(3) { animation-delay: 90ms; }
+.studio-card-enter:nth-child(4) { animation-delay: 135ms; }
+.studio-card-enter:nth-child(5) { animation-delay: 180ms; }
+.studio-card-enter:nth-child(6) { animation-delay: 225ms; }
+.studio-card-enter:nth-child(7) { animation-delay: 270ms; }
+.studio-card-enter:nth-child(8) { animation-delay: 315ms; }
+.studio-card-enter:nth-child(n + 9) { animation-delay: 360ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-card-enter {
+    animation: none;
+  }
+}
+
+/* Portfolio Media Protection Utilities */
+.protected-media {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.protected-img {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+/* Ambient Architectural Geometric Line Animations */
+@keyframes geoTraceFlow {
+  0% {
+    stroke-dashoffset: 1800;
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.72;
+  }
+  84% {
+    opacity: 0.62;
+  }
+  100% {
+    stroke-dashoffset: -1800;
+    opacity: 0;
+  }
+}
+
+@keyframes geoNodeBreathe {
+  0%, 100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 0.78;
+  }
+}
+
+@keyframes geoDriftSlow {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+.geo-trace {
+  stroke-dasharray: 220 1580;
+  stroke-dashoffset: 1800;
+  animation: geoTraceFlow 16s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.geo-trace-1 {
+  animation-duration: 15s;
+  animation-delay: 0s;
+}
+.geo-trace-2 {
+  stroke-dasharray: 190 1610;
+  animation-duration: 18s;
+  animation-delay: -4.5s;
+}
+.geo-trace-3 {
+  stroke-dasharray: 250 1550;
+  animation-duration: 20s;
+  animation-delay: -9s;
+}
+.geo-trace-4 {
+  stroke-dasharray: 160 1640;
+  animation-duration: 16s;
+  animation-delay: -6.5s;
+}
+.geo-trace-5 {
+  stroke-dasharray: 190 1610;
+  animation-duration: 14s;
+  animation-delay: -2.5s;
+}
+
+.geo-node {
+  animation: geoNodeBreathe 7.5s ease-in-out infinite;
+}
+.geo-node-1 {
+  animation-delay: 0s;
+}
+.geo-node-2 {
+  animation-duration: 9s;
+  animation-delay: -3s;
+}
+.geo-node-3 {
+  animation-duration: 10.5s;
+  animation-delay: -5.5s;
+}
+
+.geo-float-slow {
+  animation: geoDriftSlow 18s ease-in-out infinite;
+}
+.geo-float-reverse {
+  animation: geoDriftSlow 22s ease-in-out infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geo-trace,
+  .geo-node,
+  .geo-float-slow,
+  .geo-float-reverse {
+    animation: none;
+  }
+  .geo-trace {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    opacity: 0.2;
+  }
+  .geo-node {
+    opacity: 0.45;
+  }
+}
+
+/* Clean Print Mode for Curriculum Vitae */
+@media print {
+  body {
+    background-color: #FFFFFF !important;
+    color: #111114 !important;
+  }
+  header,
+  footer,
+  .ambient-geometry {
+    display: none !important;
+  }
 }

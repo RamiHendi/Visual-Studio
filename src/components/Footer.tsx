@@ -7,34 +7,50 @@ interface FooterProps {
 
 export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
   return (
-    <footer className="relative z-10 border-t border-white/10 bg-obsidian/90 py-8 mt-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-400">
-        <div className="flex items-center gap-2">
-          <span className="font-display font-bold text-white tracking-wider">
-            RAMI HENDI&apos;S VISUAL STUDIO
+    <footer className="relative z-10 border-t border-white/[0.08] bg-obsidian/80 backdrop-blur-sm mt-16 sm:mt-24">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
+        <div
+          onContextMenu={(e) => e.preventDefault()}
+          onDragStart={(e) => e.preventDefault()}
+          className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 protected-media"
+        >
+          <span className="inline-flex items-center gap-2">
+            <img
+              src="/assets/aistudio/Logo_9abd8455.png"
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="h-5 sm:h-6 w-auto object-contain shrink-0 protected-img"
+            />
+            <span className="font-display font-medium text-zinc-200 tracking-tight">
+              Rami Hendi
+            </span>
           </span>
-          <span>•</span>
-          <span>Powered by GitHub Pages &amp; Google Drive CMS</span>
+          <span aria-hidden="true" className="text-zinc-700">·</span>
+          <span>3D Design · Architectural Visualization · Industrial Design · More</span>
         </div>
-        <div className="flex items-center gap-4">
+
+        <div className="flex items-center gap-6">
           <button
+            type="button"
             onClick={() => onSelectTab('portfolio')}
-            className="hover:text-amber-400 transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-100 transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            Showcase
+            Portfolio
           </button>
           <button
+            type="button"
             onClick={() => onSelectTab('cv')}
-            className="hover:text-amber-400 transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-100 transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
             Interactive CV
           </button>
-          <button
-            onClick={() => onSelectTab('cms')}
-            className="hover:text-amber-400 transition-colors cursor-pointer"
+          <a
+            href="mailto:RHHendy@gmail.com"
+            className="text-zinc-400 hover:text-brass transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            Drive CMS Setup
-          </button>
+            RHHendy@gmail.com
+          </a>
         </div>
       </div>
     </footer>

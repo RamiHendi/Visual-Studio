@@ -1,7 +1,6 @@
 import { StudioData } from '../types';
 
 export const DEFAULT_APPS_SCRIPT_URL = 
-  import.meta.env.VITE_DEFAULT_APPS_SCRIPT_URL || 
   "https://script.google.com/macros/s/AKfycbxVzW2yRCNDbPAlNW95B0MTbD2mD6ZXaGGBnMyVIPyj1n9Jgf_ho7RLWI_H5Badu4g/exec";
 
 export const CACHE_KEY = "rami_hendi_visual_studio_cms_cache_v1";
@@ -84,7 +83,7 @@ export const DEMO_STUDIO_DATA: StudioData = {
   cvPdfUrl: "https://docs.google.com/document/d/DEMO_DOC_ID/export?format=pdf",
   cv: [
     { kind: "paragraph", heading: "TITLE", text: "Rami Hendi" },
-    { kind: "paragraph", heading: "SUBTITLE", text: "Senior 3D Visualizer, Architectural Renderer & Technical Artist | 6+ Years Experience" },
+    { kind: "paragraph", heading: "SUBTITLE", text: "3D Artist (Generalist) | 10+ Years of Experience" },
     
     { kind: "paragraph", heading: "HEADING1", text: "Executive Summary & Studio Profile" },
     { kind: "paragraph", heading: "NORMAL", text: "Multi-disciplinary 3D Visualizer, Architectural Renderer, and Technical Artist specializing in photorealistic exterior and interior architectural visualization, bespoke kitchen and cabinetry systems, mechanical product rendering, and custom Python / MaxScript workflow automation. Proven track record of translating complex CAD/BIM blueprints into cinematic lighting studies and 4K marketing visuals." },
@@ -129,7 +128,8 @@ export const DEMO_STUDIO_DATA: StudioData = {
           description: "Modeled in 3ds Max, rendered with Corona Renderer 11. Custom dusk HDRI sky dome with warm interior architectural lighting.",
           type: "image",
           thumbUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1000&q=85",
-          fullUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2400&q=90"
+          fullUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2400&q=90",
+          featured: true
         },
         {
           id: "demo-arch-2",
@@ -159,7 +159,8 @@ export const DEMO_STUDIO_DATA: StudioData = {
           description: "Precision cabinetry visualization created from manufacturing dimensions. Brushed brass fixtures, Nero Marquina marble veining, and integrated LED strip lighting.",
           type: "image",
           thumbUrl: "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=1000&q=85",
-          fullUrl: "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=2400&q=90"
+          fullUrl: "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=2400&q=90",
+          featured: true
         },
         {
           id: "demo-int-2",
@@ -167,7 +168,8 @@ export const DEMO_STUDIO_DATA: StudioData = {
           description: "Soft natural window light balance using Corona LightMix, custom bouclé fabric micro-displacement, and architectural acoustic wall panels.",
           type: "image",
           thumbUrl: "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=85",
-          fullUrl: "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=2400&q=90"
+          fullUrl: "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=2400&q=90",
+          featured: true
         },
         {
           id: "demo-int-3",
@@ -205,7 +207,8 @@ export const DEMO_STUDIO_DATA: StudioData = {
           description: "Subdivision surface modeling in 3ds Max with custom stitched leather normal maps and studio rim lighting.",
           type: "image",
           thumbUrl: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1000&q=85",
-          fullUrl: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=2400&q=90"
+          fullUrl: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=2400&q=90",
+          featured: true
         },
         {
           id: "demo-prod-3",
@@ -227,7 +230,8 @@ export const DEMO_STUDIO_DATA: StudioData = {
           description: "60fps camera sequence rendered in Corona & assembled in After Effects demonstrating sun-study transition from noon to blue hour.",
           type: "video",
           thumbUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=85",
-          embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ"
+          embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+          featured: true
         },
         {
           id: "demo-anim-2",
