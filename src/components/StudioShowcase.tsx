@@ -3,6 +3,7 @@ import {
   PortfolioCategory,
   PortfolioItem,
   PortfolioProject,
+  NavigationMetadata,
 } from '../types';
 import { getCategoryProjects } from '../utils/portfolioProjects';
 import { LazyThumbnail } from './LazyThumbnail';
@@ -20,6 +21,8 @@ interface StudioShowcaseProps {
     projectIndex?: number
   ) => void;
   onShowToast: (message: string, isWarning?: boolean) => void;
+  onNavigationChange?: (meta: NavigationMetadata) => void;
+  clearSubCategoryTrigger?: number;
 }
 
 function formatMediaCountLabel(items: PortfolioItem[]): string {
@@ -44,10 +47,11 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   onRetry,
   onOpenLightbox,
   onShowToast,
+  onNavigationChange,
+  clearSubCategoryTrigger = 0,
 }) => {
-  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [activeCategory, setActiveCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [onlyFeatured, setOnlyFeatured] = useState<boolean>(false);
   const [copiedProjectId, setCopiedProjectId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
 
@@ -62,6 +66,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   const getProjectDirectLink = (project: PortfolioProject): string => {
     const url = new URL(window.location.href);
     url.hash = '';
+    url.searchParams.delete('view');
     if (project.isProjectGroup && project.id) {
       url.searchParams.delete('work');
       url.searchParams.set('project', project.id);
@@ -83,7 +88,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
         return true;
       }
     } catch {
-      // Fall through to execCommand fallback
+      void 0;
     }
 
     try {
@@ -125,17 +130,59 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     }
   };
 
-  // Precompute normalized projects per category
   const categoryEntries = useMemo(() => {
-    return categories.map((cat) => ({
+    const sorted = [...categories].sort((a, b) =>
+      (a.rawOrder || a.category).localeCompare(b.rawOrder || b.category, undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    );
+    return sorted.map((cat) => ({
+      rawOrder: cat.rawOrder,
       category: cat.category,
       projects: getCategoryProjects(cat),
     }));
   }, [categories]);
 
-  const totalEntries = useMemo(() => {
-    return categoryEntries.reduce((acc, entry) => acc + entry.projects.length, 0);
-  }, [categoryEntries]);
+  const resolvedActiveCategory = useMemo(() => {
+    if (
+      activeCategory &&
+      categoryEntries.some((entry) => entry.category === activeCategory)
+    ) {
+      return activeCategory;
+    }
+    return categoryEntries[0]?.category || '';
+  }, [activeCategory, categoryEntries]);
+
+  useEffect(() => {
+    if (resolvedActiveCategory && activeCategory !== resolvedActiveCategory) {
+      setActiveCategory(resolvedActiveCategory);
+    }
+  }, [resolvedActiveCategory, activeCategory]);
+
+  useEffect(() => {
+    if (clearSubCategoryTrigger > 0) {
+      setSearchQuery('');
+    }
+  }, [clearSubCategoryTrigger]);
+
+  useEffect(() => {
+    const trimmedQuery = searchQuery.trim();
+    onNavigationChange?.({
+      section: 'Portfolio',
+      category: resolvedActiveCategory
+        ? resolvedActiveCategory.replace(/_/g, ' ')
+        : undefined,
+      subCategory: trimmedQuery ? `Search: "${trimmedQuery}"` : undefined,
+    });
+  }, [resolvedActiveCategory, searchQuery, onNavigationChange]);
+
+  const activeCategoryEntry = useMemo(
+    () => categoryEntries.find((entry) => entry.category === resolvedActiveCategory) || null,
+    [categoryEntries, resolvedActiveCategory]
+  );
+
+  const activeCategoryTotal = activeCategoryEntry?.projects.length || 0;
 
   const hasExplicitProjectGroups = useMemo(() => {
     return categoryEntries.some((entry) =>
@@ -143,48 +190,24 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     );
   }, [categoryEntries]);
 
-  const totalFeaturedCount = useMemo(() => {
-    let count = 0;
-    categoryEntries.forEach((entry) => {
-      entry.projects.forEach((proj) => {
-        if (proj.featured) count++;
-      });
-    });
-    return count;
-  }, [categoryEntries]);
-
-  // Filter projects by active category, Featured checkbox, and search query
   const filteredProjects: PortfolioProject[] = useMemo(() => {
-    const results: PortfolioProject[] = [];
+    if (!activeCategoryEntry) return [];
     const query = searchQuery.trim().toLowerCase();
+    if (!query) return activeCategoryEntry.projects;
 
-    categoryEntries.forEach((entry) => {
-      if (activeCategory !== 'ALL' && entry.category !== activeCategory) return;
+    return activeCategoryEntry.projects.filter(
+      (project) =>
+        project.name.toLowerCase().includes(query) ||
+        project.category.toLowerCase().includes(query) ||
+        (project.description && project.description.toLowerCase().includes(query)) ||
+        project.items.some(
+          (item) =>
+            item.title.toLowerCase().includes(query) ||
+            (item.description && item.description.toLowerCase().includes(query))
+        )
+    );
+  }, [activeCategoryEntry, searchQuery]);
 
-      entry.projects.forEach((project) => {
-        if (onlyFeatured && !project.featured) return;
-
-        const matchesSearch =
-          !query ||
-          project.name.toLowerCase().includes(query) ||
-          project.category.toLowerCase().includes(query) ||
-          (project.description && project.description.toLowerCase().includes(query)) ||
-          project.items.some(
-            (item) =>
-              item.title.toLowerCase().includes(query) ||
-              (item.description && item.description.toLowerCase().includes(query))
-          );
-
-        if (matchesSearch) {
-          results.push(project);
-        }
-      });
-    });
-
-    return results;
-  }, [categoryEntries, activeCategory, searchQuery, onlyFeatured]);
-
-  // Standalone loose items in current filter (for smooth cycling when clicking a non-grouped item)
   const standaloneFilteredItems = useMemo(() => {
     const items: PortfolioItem[] = [];
     filteredProjects.forEach((proj) => {
@@ -224,25 +247,77 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     }
   };
 
+  const handleCardKeyDown = (
+    e: React.KeyboardEvent<HTMLElement>,
+    project: PortfolioProject,
+    projIdx: number
+  ) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleOpenProjectCard(project, projIdx);
+    }
+  };
+
   const handleResetFilters = () => {
-    setActiveCategory('ALL');
     setSearchQuery('');
-    setOnlyFeatured(false);
   };
 
   if (isLoading) {
+    const skeletonCards = Array.from({ length: 6 });
+
     return (
-      <section id="studio-showcase" className="space-y-8 py-6 animate-pulse">
-        <div className="flex flex-wrap gap-3">
-          <div className="h-9 w-28 bg-charcoal rounded-sm"></div>
-          <div className="h-9 w-40 bg-charcoal rounded-sm"></div>
-          <div className="h-9 w-36 bg-charcoal rounded-sm"></div>
-          <div className="h-9 w-36 bg-charcoal rounded-sm"></div>
+      <section
+        id="studio-showcase"
+        aria-busy="true"
+        aria-label="Loading portfolio projects"
+        className="space-y-8 scroll-mt-20"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+          <h2 className="font-display text-2xl sm:text-3xl font-medium tracking-tight text-zinc-100">
+            Selected Projects
+          </h2>
+          <div
+            aria-hidden="true"
+            className="h-4 w-36 bg-charcoal border border-white/[0.05] rounded-sm animate-pulse motion-reduce:animate-none"
+          />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          <div className="h-72 bg-charcoal rounded-sm"></div>
-          <div className="h-72 bg-charcoal rounded-sm"></div>
-          <div className="h-72 bg-charcoal rounded-sm"></div>
+
+        <div
+          aria-hidden="true"
+          className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-white/[0.08]"
+        >
+          <div className="block sm:hidden w-full h-11 bg-charcoal border border-white/[0.06] rounded-sm animate-pulse motion-reduce:animate-none" />
+
+          <div className="hidden sm:flex sm:flex-wrap items-center gap-2 flex-1 min-w-0">
+            <div className="h-9 w-28 bg-panel/80 border border-white/[0.08] rounded-sm animate-pulse motion-reduce:animate-none" />
+            <div className="h-9 w-44 bg-charcoal border border-white/[0.06] rounded-sm animate-pulse motion-reduce:animate-none" />
+            <div className="h-9 w-40 bg-charcoal border border-white/[0.06] rounded-sm animate-pulse motion-reduce:animate-none" />
+            <div className="h-9 w-36 bg-charcoal border border-white/[0.06] rounded-sm animate-pulse motion-reduce:animate-none" />
+          </div>
+
+          <div className="w-full sm:w-52 lg:w-56 h-9 bg-charcoal border border-white/[0.06] rounded-sm shrink-0 animate-pulse motion-reduce:animate-none" />
+        </div>
+
+        <div
+          aria-hidden="true"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+        >
+          {skeletonCards.map((_, idx) => (
+            <div
+              key={idx}
+              className="relative aspect-[16/10] w-full rounded-sm overflow-hidden bg-charcoal border border-white/[0.06]"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-charcoal via-panel/75 to-obsidian animate-pulse motion-reduce:animate-none" />
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-4 pb-3.5 pt-14 space-y-2">
+                <div className="h-4 w-3/5 bg-white/[0.08] rounded-sm animate-pulse motion-reduce:animate-none" />
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-24 bg-white/[0.05] rounded-sm animate-pulse motion-reduce:animate-none" />
+                  <div className="h-3 w-12 bg-white/[0.04] rounded-sm animate-pulse motion-reduce:animate-none" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     );
@@ -275,33 +350,30 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   const unitLabel = hasExplicitProjectGroups ? 'projects' : 'works';
 
   return (
-    <section id="studio-showcase" className="space-y-8 scroll-mt-20">
-      {/* Editorial Section Heading */}
+    <section id="studio-showcase" aria-labelledby="studio-showcase-heading" className="space-y-8 scroll-mt-20">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
         <div>
-          <h2 className="font-display text-2xl sm:text-3xl font-medium tracking-tight text-zinc-100">
+          <h2
+            id="studio-showcase-heading"
+            className="font-display text-2xl sm:text-3xl font-medium tracking-tight text-zinc-100"
+          >
             {hasExplicitProjectGroups ? 'Selected Projects' : 'Selected Works'}
           </h2>
         </div>
         <p className="font-mono text-xs text-zinc-400 tabular-nums">
-          Showing {filteredProjects.length} of {totalEntries} {unitLabel}
+          Showing {filteredProjects.length} of {activeCategoryTotal} {unitLabel}
         </p>
       </div>
 
-      {/* Hairline Adaptive Filter Toolbar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-white/[0.08]">
-        {/* Mobile View: Dedicated Category Dropdown Menu */}
         <div className="block sm:hidden w-full">
           <div className="relative">
             <select
               aria-label="Filter projects by category"
-              value={activeCategory}
+              value={resolvedActiveCategory}
               onChange={(e) => setActiveCategory(e.target.value)}
               className="w-full h-11 pl-3.5 pr-12 bg-charcoal border border-white/15 focus:border-brass rounded-sm text-sm font-medium text-zinc-100 appearance-none cursor-pointer focus:outline-none transition-colors"
             >
-              <option value="ALL" className="bg-[#111114] text-zinc-100">
-                All {hasExplicitProjectGroups ? 'Projects' : 'Works'} ({totalEntries})
-              </option>
               {categoryEntries.map((entry) => {
                 const count = entry.projects.length;
                 const displayName = entry.category.replace(/_/g, ' ');
@@ -318,45 +390,27 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
             </select>
             <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 text-xs flex items-center gap-2">
               <span className="font-mono text-[11px] text-brass tabular-nums">
-                {activeCategory === 'ALL'
-                  ? totalEntries
-                  : categoryEntries.find((c) => c.category === activeCategory)
-                      ?.projects.length || 0}
+                {activeCategoryTotal}
               </span>
-              <i className="fa-solid fa-chevron-down text-[10px]"></i>
+              <i aria-hidden="true" className="fa-solid fa-chevron-down text-[10px]"></i>
             </div>
           </div>
         </div>
 
-        {/* Tablet & PC View: Clean Wrap-Enabled Architectural Filter Tabs */}
-        <div className="hidden sm:flex sm:flex-wrap items-center gap-2 flex-1 min-w-0">
-          <button
-            type="button"
-            onClick={() => setActiveCategory('ALL')}
-            className={`h-9 px-3.5 rounded-sm text-xs font-medium transition-colors duration-150 flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
-              activeCategory === 'ALL'
-                ? 'bg-brass text-obsidian font-semibold'
-                : 'bg-transparent text-zinc-400 hover:text-zinc-100 border border-white/[0.08] hover:border-white/25'
-            }`}
-          >
-            <span>All {hasExplicitProjectGroups ? 'Projects' : 'Works'}</span>
-            <span
-              className={`font-mono text-[11px] tabular-nums ${
-                activeCategory === 'ALL' ? 'text-obsidian/80' : 'text-zinc-500'
-              }`}
-            >
-              {totalEntries}
-            </span>
-          </button>
-
+        <div
+          role="group"
+          aria-label="Portfolio categories"
+          className="hidden sm:flex sm:flex-wrap items-center gap-2 flex-1 min-w-0"
+        >
           {categoryEntries.map((entry) => {
             const count = entry.projects.length;
-            const isActive = activeCategory === entry.category;
+            const isActive = resolvedActiveCategory === entry.category;
             const displayName = entry.category.replace(/_/g, ' ');
             return (
               <button
                 type="button"
                 key={entry.category}
+                aria-pressed={isActive}
                 onClick={() => setActiveCategory(entry.category)}
                 className={`h-9 px-3.5 rounded-sm text-xs font-medium transition-colors duration-150 flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
                   isActive
@@ -377,38 +431,14 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           })}
         </div>
 
-        {/* Right Controls: Featured Checkbox & Search */}
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full lg:w-auto">
-          {/* Featured Checkbox Filter */}
-          <label
-            title="Show only featured projects"
-            className={`flex items-center gap-2 px-3 h-9 rounded-sm border text-xs font-medium cursor-pointer select-none transition-colors duration-150 whitespace-nowrap shrink-0 ${
-              onlyFeatured
-                ? 'bg-brass/15 border-brass text-brass'
-                : 'bg-charcoal border-white/[0.09] text-zinc-300 hover:text-zinc-100 hover:border-white/25'
-            }`}
-          >
+          <div className="relative flex-1 sm:flex-none sm:w-52 lg:w-56">
+            <i
+              aria-hidden="true"
+              className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-[11px]"
+            ></i>
             <input
-              type="checkbox"
-              checked={onlyFeatured}
-              onChange={(e) => setOnlyFeatured(e.target.checked)}
-              className="w-3.5 h-3.5 accent-[#52D1FF] rounded-sm cursor-pointer"
-            />
-            <span>Featured</span>
-            <span
-              className={`font-mono text-[11px] tabular-nums ${
-                onlyFeatured ? 'text-brass' : 'text-zinc-500'
-              }`}
-            >
-              {totalFeaturedCount}
-            </span>
-          </label>
-
-          {/* Search Field */}
-          <div className="relative flex-1 sm:flex-none sm:w-44 lg:w-48">
-            <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-[11px]"></i>
-            <input
-              type="text"
+              type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={
@@ -424,41 +454,37 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                 onClick={() => setSearchQuery('')}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 text-xs cursor-pointer p-0.5"
               >
-                <i className="fa-solid fa-xmark"></i>
+                <i aria-hidden="true" className="fa-solid fa-xmark"></i>
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Empty State */}
       {filteredProjects.length === 0 ? (
         <div
-          key={`empty::${activeCategory}::${onlyFeatured}`}
+          key={`empty::${resolvedActiveCategory}`}
           className="studio-card-enter text-center py-20 border border-white/[0.08] bg-charcoal/50 rounded-sm px-6"
         >
           <h3 className="font-display text-lg font-medium text-zinc-100">
-            {onlyFeatured
-              ? 'No Matching Featured Projects'
-              : 'No Matching Projects Found'}
+            No Matching Projects Found
           </h3>
           <p className="text-sm text-zinc-400 max-w-md mx-auto mt-2">
-            {onlyFeatured
-              ? 'Uncheck the Featured filter, clear your search query, or choose another discipline above.'
-              : 'Try clearing your search query or selecting another discipline above.'}
+            Try clearing your search query or selecting another discipline above.
           </p>
-          <button
-            type="button"
-            onClick={handleResetFilters}
-            className="mt-5 px-5 py-2.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian font-semibold text-xs transition-colors duration-150 cursor-pointer"
-          >
-            Reset Filters
-          </button>
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="mt-5 px-5 py-2.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian font-semibold text-xs transition-colors duration-150 cursor-pointer"
+            >
+              Clear Search
+            </button>
+          )}
         </div>
       ) : (
-        /* Edge-to-Edge Frameless Uniform Grid Project Gallery */
         <div
-          key={`${activeCategory}::${onlyFeatured}`}
+          key={resolvedActiveCategory}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
         >
           {filteredProjects.map((project, idx) => {
@@ -469,37 +495,41 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
             const isMultiItem = project.items.length > 1;
             const mediaCountText = formatMediaCountLabel(project.items);
             const showProjectTitle = Boolean(project.isProjectGroup && project.name);
+            const cardLabel = showProjectTitle
+              ? `Open project ${project.name} in ${categoryLabel}`
+              : `Open ${categoryLabel} showcase`;
 
             return (
               <article
                 key={project.id || idx}
+                role="button"
+                tabIndex={0}
+                aria-label={cardLabel}
                 onClick={() => handleOpenProjectCard(project, idx)}
+                onKeyDown={(e) => handleCardKeyDown(e, project, idx)}
                 onContextMenu={(e) => e.preventDefault()}
                 onDragStart={(e) => e.preventDefault()}
-                className="studio-card-enter protected-media group relative rounded-sm overflow-hidden bg-charcoal cursor-pointer"
+                className="studio-card-enter protected-media group relative rounded-sm overflow-hidden bg-charcoal cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass"
               >
-                {/* Edge-to-Edge Protected Project Cover Media */}
                 <div className="relative overflow-hidden bg-charcoal">
                   <LazyThumbnail
                     src={project.coverUrl}
                     alt={
                       showProjectTitle
-                        ? `${project.name} — ${categoryLabel}`
-                        : `${categoryLabel} showcase`
+                        ? `${project.name} — ${categoryLabel} by Rami Hendi`
+                        : `${categoryLabel} 3D visualization by Rami Hendi`
                     }
                     eager={idx < 3}
                   />
 
-                  {/* Subtle Center Play Emblem for Video-Only Projects */}
                   {isVideoOnly && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/25 group-hover:bg-black/15 transition-colors duration-200 pointer-events-none">
                       <div className="w-12 h-12 rounded-full bg-obsidian/80 backdrop-blur-sm border border-white/25 text-zinc-100 group-hover:bg-brass group-hover:text-obsidian group-hover:border-brass flex items-center justify-center transition-all duration-200 transform group-hover:scale-105">
-                        <i className="fa-solid fa-play text-sm ml-0.5"></i>
+                        <i aria-hidden="true" className="fa-solid fa-play text-sm ml-0.5"></i>
                       </div>
                     </div>
                   )}
 
-                  {/* Measured Contrast Scrim (Always shows clean Project Name for folder projects; hover reveal for loose items & actions) */}
                   <div
                     className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-4 pb-3.5 pt-16 flex items-end justify-between gap-3 transition-opacity duration-200 pointer-events-none ${
                       showProjectTitle
@@ -508,14 +538,12 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                     }`}
                   >
                     <div className="min-w-0 space-y-1">
-                      {/* Project Subfolder Name (Never individual image filenames) */}
                       {showProjectTitle && (
                         <h3 className="font-display text-sm sm:text-base font-medium text-zinc-100 tracking-tight leading-snug truncate">
                           {project.name}
                         </h3>
                       )}
 
-                      {/* Clean Unboxed Metadata */}
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-300">
                         <span className="truncate">{categoryLabel}</span>
                         {(showProjectTitle || isMultiItem) && (
@@ -549,13 +577,12 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                       </div>
 
                       {project.description && (
-                        <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed hidden sm:group-hover:block">
+                        <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed text-justify hidden sm:group-hover:block">
                           {project.description}
                         </p>
                       )}
                     </div>
 
-                    {/* Minimal Functional Share Button */}
                     <div
                       className={`flex items-center gap-1.5 shrink-0 pointer-events-auto transition-opacity duration-150 ${
                         showProjectTitle
@@ -575,6 +602,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                         }`}
                       >
                         <i
+                          aria-hidden="true"
                           className={`fa-solid ${
                             copiedProjectId === project.id ? 'fa-check' : 'fa-share-nodes'
                           } text-xs`}

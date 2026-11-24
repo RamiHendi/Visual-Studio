@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { StudioData, MainTab, PortfolioItem, PortfolioProject, ToastState } from './types';
+import {
+  StudioData,
+  MainTab,
+  PortfolioItem,
+  PortfolioProject,
+  ToastState,
+  NavigationMetadata,
+} from './types';
 import {
   DEFAULT_APPS_SCRIPT_URL,
   CACHE_KEY,
@@ -7,11 +14,14 @@ import {
   DEMO_STUDIO_DATA,
 } from './data/demoData';
 import { getAllPortfolioProjects } from './utils/portfolioProjects';
+import { getUniqueVisitorIpHash } from './utils/visitorTracker';
+import { syncPageSeo } from './utils/seo';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StudioShowcase } from './components/StudioShowcase';
 import { InteractiveCV } from './components/InteractiveCV';
 import { LightboxModal } from './components/LightboxModal';
+import { ContactModal } from './components/ContactModal';
 import { Toast } from './components/Toast';
 import { Footer } from './components/Footer';
 import { AmbientGeometry } from './components/AmbientGeometry';
@@ -30,6 +40,14 @@ const isValidLiveStudioData = (data: unknown): data is StudioData => {
   return !hasDemoItems;
 };
 
+const safeStorageRemove = (storage: Storage, key: string): void => {
+  try {
+    storage.removeItem(key);
+  } catch {
+    void 0;
+  }
+};
+
 const readCachedLiveData = (): { data: StudioData | null; isSessionFresh: boolean } => {
   try {
     const sessionRaw = sessionStorage.getItem(CACHE_KEY);
@@ -38,10 +56,10 @@ const readCachedLiveData = (): { data: StudioData | null; isSessionFresh: boolea
       if (isValidLiveStudioData(parsed) && parsed.portfolio.length > 0) {
         return { data: parsed, isSessionFresh: true };
       }
-      sessionStorage.removeItem(CACHE_KEY);
+      safeStorageRemove(sessionStorage, CACHE_KEY);
     }
   } catch {
-    sessionStorage.removeItem(CACHE_KEY);
+    safeStorageRemove(sessionStorage, CACHE_KEY);
   }
 
   try {
@@ -51,13 +69,25 @@ const readCachedLiveData = (): { data: StudioData | null; isSessionFresh: boolea
       if (isValidLiveStudioData(parsed) && parsed.portfolio.length > 0) {
         return { data: parsed, isSessionFresh: false };
       }
-      localStorage.removeItem(LIVE_PERSISTENT_CACHE_KEY);
+      safeStorageRemove(localStorage, LIVE_PERSISTENT_CACHE_KEY);
     }
   } catch {
-    localStorage.removeItem(LIVE_PERSISTENT_CACHE_KEY);
+    safeStorageRemove(localStorage, LIVE_PERSISTENT_CACHE_KEY);
   }
 
   return { data: null, isSessionFresh: false };
+};
+
+const getInitialTabFromUrl = (): MainTab => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'cv' || window.location.hash.toLowerCase() === '#cv') {
+      return 'cv';
+    }
+  } catch {
+    void 0;
+  }
+  return 'portfolio';
 };
 
 export const App: React.FC = () => {
@@ -66,7 +96,7 @@ export const App: React.FC = () => {
     initialCacheRef.current = readCachedLiveData();
   }
 
-  const [currentTab, setCurrentTab] = useState<MainTab>('portfolio');
+  const [currentTab, setCurrentTab] = useState<MainTab>(getInitialTabFromUrl);
   const [studioData, setStudioData] = useState<StudioData>(
     () => initialCacheRef.current?.data ?? DEMO_STUDIO_DATA
   );
@@ -74,8 +104,21 @@ export const App: React.FC = () => {
     () => !initialCacheRef.current?.data
   );
   const [loadError, setLoadError] = useState<boolean>(false);
+  const [visitorCount, setVisitorCount] = useState<number | null>(() => {
+    const cachedCount = initialCacheRef.current?.data?.visitorCount;
+    return typeof cachedCount === 'number' && Number.isFinite(cachedCount)
+      ? cachedCount
+      : null;
+  });
+  const [isContactOpen, setIsContactOpen] = useState<boolean>(false);
+  const [portfolioNav, setPortfolioNav] = useState<NavigationMetadata>({
+    section: 'Portfolio',
+  });
+  const [cvNav, setCvNav] = useState<NavigationMetadata>({
+    section: 'Curriculum Vitae',
+  });
+  const [clearSubCategoryTrigger, setClearSubCategoryTrigger] = useState<number>(0);
 
-  // Toast state
   const [toast, setToast] = useState<ToastState>({
     show: false,
     message: '',
@@ -84,8 +127,8 @@ export const App: React.FC = () => {
   const toastTimerRef = useRef<number | null>(null);
   const handledDeepLinkRef = useRef<string | null>(null);
   const hasLiveDataRef = useRef<boolean>(Boolean(initialCacheRef.current?.data));
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
 
-  // Lightbox state
   const [lightbox, setLightbox] = useState<{
     isOpen: boolean;
     itemIndex: number;
@@ -118,40 +161,63 @@ export const App: React.FC = () => {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
       }
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
     };
   }, []);
 
   const getActiveAppsScriptUrl = useCallback((): string => {
-    const saved = localStorage.getItem(SAVED_URL_KEY);
-    return saved && saved.trim() !== '' ? saved.trim() : DEFAULT_APPS_SCRIPT_URL.trim();
+    try {
+      const saved = localStorage.getItem(SAVED_URL_KEY);
+      if (saved && saved.trim() !== '') {
+        return saved.trim();
+      }
+    } catch {
+      void 0;
+    }
+    return DEFAULT_APPS_SCRIPT_URL.trim();
   }, []);
 
-  const loadData = useCallback(async (_forceRefresh = false) => {
+  const loadData = useCallback(async () => {
     const targetUrl = getActiveAppsScriptUrl();
     if (!targetUrl) {
       setIsLoading(false);
       return;
     }
 
+    if (activeFetchControllerRef.current) {
+      activeFetchControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeFetchControllerRef.current = controller;
+
     if (!hasLiveDataRef.current) {
       setIsLoading(true);
     }
     setLoadError(false);
 
+    const timeoutId = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 12000);
-
       const response = await fetch(targetUrl, {
         signal: controller.signal,
         cache: 'no-store',
       });
-      window.clearTimeout(timeoutId);
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const liveData = (await response.json()) as StudioData;
 
+      if (controller.signal.aborted) return;
+
       if (isValidLiveStudioData(liveData)) {
+        if (
+          typeof liveData.visitorCount === 'number' &&
+          Number.isFinite(liveData.visitorCount)
+        ) {
+          setVisitorCount((prev) =>
+            prev === null ? liveData.visitorCount! : Math.max(prev, liveData.visitorCount!)
+          );
+        }
         const hasNewPortfolioItems = liveData.portfolio.length > 0;
         if (hasNewPortfolioItems || !hasLiveDataRef.current) {
           if (hasNewPortfolioItems) {
@@ -165,17 +231,20 @@ export const App: React.FC = () => {
               sessionStorage.setItem(CACHE_KEY, serialized);
               localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
             } catch {
-              // Ignore storage quota errors
+              void 0;
             }
           }
         }
       }
-    } catch (err) {
-      console.warn('Could not fetch live Google Drive studio data:', err);
-      if (!hasLiveDataRef.current) {
+    } catch {
+      if (!controller.signal.aborted && !hasLiveDataRef.current) {
         setLoadError(true);
       }
     } finally {
+      window.clearTimeout(timeoutId);
+      if (activeFetchControllerRef.current === controller) {
+        activeFetchControllerRef.current = null;
+      }
       setIsLoading(false);
     }
   }, [getActiveAppsScriptUrl]);
@@ -184,13 +253,68 @@ export const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Normalized projects list across all categories
+  useEffect(() => {
+    let cancelled = false;
+
+    const recordUniqueVisit = async () => {
+      const targetUrl = getActiveAppsScriptUrl();
+      if (!targetUrl) return;
+
+      const visitorHash = await getUniqueVisitorIpHash();
+      if (cancelled || !visitorHash) return;
+
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const visitUrl = new URL(targetUrl);
+        visitUrl.searchParams.set('action', 'visit');
+        visitUrl.searchParams.set('visitor', visitorHash);
+
+        const res = await fetch(visitUrl.toString(), {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+
+        if (!res.ok || cancelled) return;
+        const payload = (await res.json()) as { visitorCount?: unknown };
+        if (
+          typeof payload?.visitorCount === 'number' &&
+          Number.isFinite(payload.visitorCount) &&
+          !cancelled
+        ) {
+          const liveCount = payload.visitorCount;
+          setVisitorCount((prev) => (prev === null ? liveCount : Math.max(prev, liveCount)));
+          try {
+            const localRaw = localStorage.getItem(LIVE_PERSISTENT_CACHE_KEY);
+            if (localRaw) {
+              const parsed = JSON.parse(localRaw) as StudioData;
+              parsed.visitorCount = liveCount;
+              const serialized = JSON.stringify(parsed);
+              localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
+              sessionStorage.setItem(CACHE_KEY, serialized);
+            }
+          } catch {
+            void 0;
+          }
+        }
+      } catch {
+        void 0;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    };
+
+    recordUniqueVisit();
+    return () => {
+      cancelled = true;
+    };
+  }, [getActiveAppsScriptUrl]);
+
   const allProjects: PortfolioProject[] = useMemo(
     () => getAllPortfolioProjects(studioData.portfolio || []),
     [studioData.portfolio]
   );
 
-  // Open shared project (`?project=<id>`) or individual item (`?work=<id>`) directly
   useEffect(() => {
     if (isLoading || allProjects.length === 0) return;
     const params = new URLSearchParams(window.location.search);
@@ -243,60 +367,117 @@ export const App: React.FC = () => {
     }
   }, [allProjects, isLoading]);
 
-  const handleSelectTab = (tab: MainTab) => {
-    setCurrentTab(tab);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const activeLightboxItem = lightbox.isOpen
+    ? lightbox.items[lightbox.itemIndex]
+    : undefined;
+  const activePortfolioCategory = (
+    activeLightboxItem?.category ||
+    portfolioNav.category ||
+    ''
+  )
+    .replace(/_/g, ' ')
+    .trim();
+  const activeLightboxProject = lightbox.isOpen
+    ? (lightbox.projectTitle || activeLightboxItem?.projectName || '').trim()
+    : '';
 
-  const handleExploreWorks = () => {
+  useEffect(() => {
+    syncPageSeo({
+      tab: currentTab,
+      category: currentTab === 'portfolio' ? activePortfolioCategory : undefined,
+      projectTitle: currentTab === 'portfolio' ? activeLightboxProject : undefined,
+      cvSection: currentTab === 'cv' ? cvNav.category : undefined,
+      projects: allProjects,
+    });
+  }, [currentTab, activePortfolioCategory, activeLightboxProject, cvNav.category, allProjects]);
+
+  const handleSelectTab = useCallback((tab: MainTab) => {
+    setCurrentTab(tab);
+    try {
+      const url = new URL(window.location.href);
+      if (tab === 'cv') {
+        url.searchParams.set('view', 'cv');
+      } else {
+        url.searchParams.delete('view');
+      }
+      if (url.hash.toLowerCase() === '#cv') {
+        url.hash = '';
+      }
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      void 0;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleExploreWorks = useCallback(() => {
     setCurrentTab('portfolio');
     const showcase = document.getElementById('studio-showcase');
     if (showcase) {
       showcase.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  };
+  }, []);
 
-  const handleOpenLightbox = (
-    itemIndex: number,
-    items: PortfolioItem[],
-    projectTitle?: string,
-    projectList?: PortfolioProject[],
-    projectIndex?: number
-  ) => {
-    const resolvedList = projectList ?? allProjects;
-    const resolvedIndex = typeof projectIndex === 'number' ? projectIndex : -1;
-    setLightbox({
-      isOpen: true,
-      itemIndex,
-      items,
-      projectTitle,
-      projectList: resolvedList,
-      projectIndex: resolvedIndex,
-    });
-  };
+  const handleOpenContact = useCallback(() => {
+    setIsContactOpen(true);
+  }, []);
 
-  const handleCloseLightbox = () => {
+  const handleCloseContact = useCallback(() => {
+    setIsContactOpen(false);
+  }, []);
+
+  const handleOpenCVTab = useCallback(() => {
+    handleSelectTab('cv');
+  }, [handleSelectTab]);
+
+  const handleOpenLightbox = useCallback(
+    (
+      itemIndex: number,
+      items: PortfolioItem[],
+      projectTitle?: string,
+      projectList?: PortfolioProject[],
+      projectIndex?: number
+    ) => {
+      const resolvedList = projectList ?? allProjects;
+      const resolvedIndex = typeof projectIndex === 'number' ? projectIndex : -1;
+      setLightbox({
+        isOpen: true,
+        itemIndex,
+        items,
+        projectTitle,
+        projectList: resolvedList,
+        projectIndex: resolvedIndex,
+      });
+    },
+    [allProjects]
+  );
+
+  const handleCloseLightbox = useCallback(() => {
     setLightbox((prev) => ({ ...prev, isOpen: false }));
-    const url = new URL(window.location.href);
-    let changed = false;
-    if (url.searchParams.has('work')) {
-      url.searchParams.delete('work');
-      changed = true;
+    try {
+      const url = new URL(window.location.href);
+      let changed = false;
+      if (url.searchParams.has('work')) {
+        url.searchParams.delete('work');
+        changed = true;
+      }
+      if (url.searchParams.has('project')) {
+        url.searchParams.delete('project');
+        changed = true;
+      }
+      if (changed) {
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {
+      void 0;
     }
-    if (url.searchParams.has('project')) {
-      url.searchParams.delete('project');
-      changed = true;
-    }
-    if (changed) {
-      window.history.replaceState({}, '', url.toString());
-    }
-  };
+  }, []);
 
-  const handleNavigateLightbox = (newIndex: number) => {
+  const handleNavigateLightbox = useCallback((newIndex: number) => {
     setLightbox((prev) => ({ ...prev, itemIndex: newIndex }));
-  };
+  }, []);
 
-  const handleJumpProject = (delta: -1 | 1) => {
+  const handleJumpProject = useCallback((delta: -1 | 1) => {
     setLightbox((prev) => {
       const list = prev.projectList;
       if (!list || list.length <= 1 || prev.projectIndex < 0) return prev;
@@ -311,16 +492,9 @@ export const App: React.FC = () => {
         projectTitle: targetProject.isProjectGroup ? targetProject.name : undefined,
       };
     });
-  };
+  }, []);
 
-  // Derive Hero information and curated Featured Spotlight entries
-  const {
-    heroTitle,
-    heroSubtitle,
-    totalCategories,
-    totalWorks,
-    spotlightEntries,
-  } = useMemo(() => {
+  const { heroTitle, heroSubtitle } = useMemo(() => {
     const cvElements = studioData.cv || [];
     const titleEl = cvElements.find((e) => e.heading === 'TITLE');
     const subtitleEl = cvElements.find((e) => e.heading === 'SUBTITLE');
@@ -334,67 +508,11 @@ export const App: React.FC = () => {
         ? '3D Artist (Generalist) | 10+ Years of Experience'
         : rawSubtitle;
 
-    const categories = studioData.portfolio || [];
-    const worksCount = allProjects.reduce((sum, proj) => sum + proj.items.length, 0);
-
-    type SpotlightEntry = {
-      item: PortfolioItem;
-      project: PortfolioProject;
-      itemIndex: number;
-    };
-
-    const featuredEntries: SpotlightEntry[] = [];
-    const fallbackEntries: SpotlightEntry[] = [];
-
-    allProjects.forEach((project) => {
-      const firstImageIdx = project.items.findIndex((i) => i.type !== 'video');
-      if (firstImageIdx === -1) return;
-      const entry: SpotlightEntry = {
-        item: project.items[firstImageIdx],
-        project,
-        itemIndex: firstImageIdx,
-      };
-      if (project.featured) {
-        featuredEntries.push(entry);
-      } else {
-        fallbackEntries.push(entry);
-      }
-    });
-
-    const spotlight = (
-      featuredEntries.length > 0 ? featuredEntries : fallbackEntries
-    ).slice(0, 6);
-
     return {
       heroTitle: title,
       heroSubtitle: subtitle,
-      totalCategories: categories.length,
-      totalWorks: worksCount,
-      spotlightEntries: spotlight,
     };
-  }, [studioData, allProjects]);
-
-  const spotlightItems = useMemo(
-    () => spotlightEntries.map((entry) => entry.item),
-    [spotlightEntries]
-  );
-
-  const handleOpenSpotlight = (index: number) => {
-    const entry = spotlightEntries[index];
-    if (!entry) return;
-    const projectIndexInAll = allProjects.findIndex((p) => p.id === entry.project.id);
-    if (entry.project.isProjectGroup || entry.project.items.length > 1) {
-      handleOpenLightbox(
-        entry.itemIndex,
-        entry.project.items,
-        entry.project.name || undefined,
-        allProjects,
-        projectIndexInAll
-      );
-    } else {
-      handleOpenLightbox(index, spotlightItems, undefined, allProjects, projectIndexInAll);
-    }
-  };
+  }, [studioData]);
 
   const prevProject =
     lightbox.projectList.length > 1 && lightbox.projectIndex >= 0
@@ -409,43 +527,161 @@ export const App: React.FC = () => {
       ? lightbox.projectList[(lightbox.projectIndex + 1) % lightbox.projectList.length]
       : null;
 
+  const breadcrumbItems = useMemo(() => {
+    type Crumb = { label: string; onClick?: () => void };
+    const crumbs: Crumb[] = [];
+
+    if (currentTab === 'portfolio') {
+      const resolvedSubCategory =
+        activeLightboxProject || portfolioNav.subCategory || '';
+
+      crumbs.push({
+        label: 'Portfolio',
+        onClick: () => {
+          if (lightbox.isOpen) handleCloseLightbox();
+          setClearSubCategoryTrigger((n) => n + 1);
+          handleSelectTab('portfolio');
+        },
+      });
+
+      if (activePortfolioCategory) {
+        crumbs.push({
+          label: activePortfolioCategory,
+          onClick: resolvedSubCategory
+            ? () => {
+                if (lightbox.isOpen) handleCloseLightbox();
+                setClearSubCategoryTrigger((n) => n + 1);
+                handleExploreWorks();
+              }
+            : undefined,
+        });
+      }
+
+      if (resolvedSubCategory) {
+        crumbs.push({
+          label: resolvedSubCategory,
+        });
+      }
+    } else {
+      crumbs.push({
+        label: 'Portfolio',
+        onClick: () => handleSelectTab('portfolio'),
+      });
+      crumbs.push({
+        label: cvNav.section || 'Curriculum Vitae',
+        onClick: cvNav.category
+          ? () => window.scrollTo({ top: 0, behavior: 'smooth' })
+          : undefined,
+      });
+      if (cvNav.category) {
+        crumbs.push({
+          label: cvNav.category,
+        });
+      }
+      if (cvNav.subCategory) {
+        crumbs.push({
+          label: cvNav.subCategory,
+        });
+      }
+    }
+
+    return crumbs;
+  }, [
+    currentTab,
+    activePortfolioCategory,
+    activeLightboxProject,
+    portfolioNav.subCategory,
+    cvNav.section,
+    cvNav.category,
+    cvNav.subCategory,
+    lightbox.isOpen,
+    handleCloseLightbox,
+    handleSelectTab,
+    handleExploreWorks,
+  ]);
+
   return (
     <div className="min-h-screen flex flex-col bg-obsidian text-[#F4F4F5] relative">
-      {/* Subtle Ambient Glowing Geometric Background Layer */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-brass focus:text-obsidian focus:text-xs focus:font-semibold focus:rounded-sm"
+      >
+        Skip to main content
+      </a>
+
       <AmbientGeometry />
 
-      {/* Top Sticky 3-Zone Monograph Navigation Bar */}
       <Header
         currentTab={currentTab}
         onSelectTab={handleSelectTab}
         cvPdfUrl={studioData.cvPdfUrl}
+        onOpenContact={handleOpenContact}
       />
 
-      {/* Split Monograph Hero on Portfolio View */}
       {currentTab === 'portfolio' && (
         <Hero
           title={heroTitle}
           subtitle={heroSubtitle}
-          categoriesCount={totalCategories}
-          worksCount={totalWorks}
-          spotlightItems={spotlightItems}
+          projectsCount={allProjects.length}
+          visitorsCount={visitorCount}
           isLoading={isLoading}
-          onOpenSpotlight={handleOpenSpotlight}
           onExploreWorks={handleExploreWorks}
-          onOpenCV={() => handleSelectTab('cv')}
+          onOpenCV={handleOpenCVTab}
         />
       )}
 
-      {/* Main Content Area */}
-      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <main
+        id="main-content"
+        className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12"
+      >
+        <nav
+          aria-label="Breadcrumb"
+          className="mb-6 pb-3 border-b border-white/[0.06] overflow-x-auto no-scrollbar"
+        >
+          <ol className="flex items-center gap-2 font-mono text-[11px] sm:text-xs text-zinc-500 tracking-wide">
+            {breadcrumbItems.map((crumb, idx) => {
+              const isLast = idx === breadcrumbItems.length - 1;
+              return (
+                <li key={`${crumb.label}-${idx}`} className="inline-flex items-center gap-2 min-w-0">
+                  {idx > 0 && (
+                    <span aria-hidden="true" className="text-zinc-600 select-none shrink-0">
+                      &gt;
+                    </span>
+                  )}
+                  {crumb.onClick && !isLast ? (
+                    <button
+                      type="button"
+                      onClick={crumb.onClick}
+                      className="hover:text-brass transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      {crumb.label}
+                    </button>
+                  ) : (
+                    <span
+                      aria-current={isLast ? 'page' : undefined}
+                      className={`${
+                        isLast ? 'text-zinc-200' : 'text-zinc-400'
+                      } whitespace-nowrap truncate`}
+                    >
+                      {crumb.label}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
         {currentTab === 'portfolio' && (
           <StudioShowcase
             categories={studioData.portfolio || []}
             isLoading={isLoading}
             loadError={loadError}
-            onRetry={() => loadData(true)}
+            onRetry={loadData}
             onOpenLightbox={handleOpenLightbox}
             onShowToast={showToast}
+            onNavigationChange={setPortfolioNav}
+            clearSubCategoryTrigger={clearSubCategoryTrigger}
           />
         )}
 
@@ -453,11 +689,11 @@ export const App: React.FC = () => {
           <InteractiveCV
             elements={studioData.cv || []}
             cvPdfUrl={studioData.cvPdfUrl}
+            onNavigationChange={setCvNav}
           />
         )}
       </main>
 
-      {/* Full-Screen Darkroom 4K Lightbox & Project Filmstrip Modal */}
       <LightboxModal
         isOpen={lightbox.isOpen}
         itemIndex={lightbox.itemIndex}
@@ -475,14 +711,17 @@ export const App: React.FC = () => {
         onNavigate={handleNavigateLightbox}
       />
 
-      {/* Toast Notification */}
+      <ContactModal
+        isOpen={isContactOpen}
+        onClose={handleCloseContact}
+      />
+
       <Toast
         show={toast.show}
         message={toast.message}
         isWarning={toast.isWarning}
       />
 
-      {/* Quiet Architectural Footer */}
       <Footer onSelectTab={handleSelectTab} />
     </div>
   );

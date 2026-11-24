@@ -5,7 +5,7 @@ interface FooterProps {
   onSelectTab: (tab: MainTab) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
+export const Footer: React.FC<FooterProps> = React.memo(({ onSelectTab }) => {
   return (
     <footer className="relative z-10 border-t border-white/[0.08] bg-obsidian/80 backdrop-blur-sm mt-16 sm:mt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
@@ -19,6 +19,10 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
               src="./assets/aistudio/Logo_9abd8455.png"
               alt=""
               aria-hidden="true"
+              width={24}
+              height={24}
+              loading="lazy"
+              decoding="async"
               draggable={false}
               className="h-5 sm:h-6 w-auto object-contain shrink-0 protected-img"
             />
@@ -30,7 +34,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
           <span>3D Design · Architectural Visualization · Industrial Design · More</span>
         </div>
 
-        <div className="flex items-center gap-6">
+        <nav aria-label="Footer navigation" className="flex items-center gap-6">
           <button
             type="button"
             onClick={() => onSelectTab('portfolio')}
@@ -51,8 +55,10 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
           >
             rhhendy@gmail.com
           </a>
-        </div>
+        </nav>
       </div>
     </footer>
   );
-};
+});
+
+Footer.displayName = 'Footer';

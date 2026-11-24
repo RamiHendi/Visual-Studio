@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ramihendi.github.io/Visual-Studio/sitemap.xml

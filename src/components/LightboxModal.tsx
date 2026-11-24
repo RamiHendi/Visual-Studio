@@ -29,6 +29,7 @@ interface LightboxModalProps {
 
 const EXIT_ANIMATION_MS = 480;
 const ZOOM_SCALE = 1.85;
+const MAX_PRELOAD_CACHE_ENTRIES = 24;
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   isOpen,
@@ -61,6 +62,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     startY: number;
   } | null>(null);
   const didDragRef = useRef<boolean>(false);
+  const touchSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const displayedSlideRef = useRef<ActiveSlide | null>(null);
   const prevItemsRef = useRef<PortfolioItem[]>(items);
@@ -71,52 +73,72 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const preloadedCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const inFlightLoadsRef = useRef<Map<string, Promise<string>>>(new Map());
 
-  const currentItem = items[itemIndex];
+  const safeIndex = items.length > 0 ? Math.max(0, Math.min(itemIndex, items.length - 1)) : 0;
+  const currentItem = items[safeIndex];
   const activeProjectTitle = (projectTitle || currentItem?.projectName || '').trim();
 
-  // Keep decoded image bitmaps warm in memory so transitions start with 0ms decode delay
-  const loadAndDecodeUrl = useCallback((url: string): Promise<string> => {
-    const cleanUrl = url.trim();
-    if (!cleanUrl) return Promise.resolve('');
-
-    const cached = preloadedCacheRef.current.get(cleanUrl);
-    if (cached && cached.complete && cached.naturalWidth > 0) {
-      return Promise.resolve(cleanUrl);
+  const touchCacheEntry = useCallback((url: string, img: HTMLImageElement) => {
+    const cache = preloadedCacheRef.current;
+    if (cache.has(url)) {
+      cache.delete(url);
     }
-
-    const existingPromise = inFlightLoadsRef.current.get(cleanUrl);
-    if (existingPromise) return existingPromise;
-
-    const promise = new Promise<string>((resolve) => {
-      const img = new Image();
-      img.referrerPolicy = 'no-referrer';
-      img.decoding = 'async';
-
-      const finishSuccess = () => {
-        preloadedCacheRef.current.set(cleanUrl, img);
-        inFlightLoadsRef.current.delete(cleanUrl);
-        resolve(cleanUrl);
-      };
-
-      const finishError = () => {
-        inFlightLoadsRef.current.delete(cleanUrl);
-        resolve('');
-      };
-
-      img.onload = () => {
-        if (typeof img.decode === 'function') {
-          img.decode().then(finishSuccess, finishSuccess);
-        } else {
-          finishSuccess();
-        }
-      };
-      img.onerror = finishError;
-      img.src = cleanUrl;
-    });
-
-    inFlightLoadsRef.current.set(cleanUrl, promise);
-    return promise;
+    cache.set(url, img);
+    while (cache.size > MAX_PRELOAD_CACHE_ENTRIES) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        cache.delete(oldestKey);
+      } else {
+        break;
+      }
+    }
   }, []);
+
+  const loadAndDecodeUrl = useCallback(
+    (url: string): Promise<string> => {
+      const cleanUrl = url.trim();
+      if (!cleanUrl) return Promise.resolve('');
+
+      const cached = preloadedCacheRef.current.get(cleanUrl);
+      if (cached && cached.complete && cached.naturalWidth > 0) {
+        touchCacheEntry(cleanUrl, cached);
+        return Promise.resolve(cleanUrl);
+      }
+
+      const existingPromise = inFlightLoadsRef.current.get(cleanUrl);
+      if (existingPromise) return existingPromise;
+
+      const promise = new Promise<string>((resolve) => {
+        const img = new Image();
+        img.referrerPolicy = 'no-referrer';
+        img.decoding = 'async';
+
+        const finishSuccess = () => {
+          touchCacheEntry(cleanUrl, img);
+          inFlightLoadsRef.current.delete(cleanUrl);
+          resolve(cleanUrl);
+        };
+
+        const finishError = () => {
+          inFlightLoadsRef.current.delete(cleanUrl);
+          resolve('');
+        };
+
+        img.onload = () => {
+          if (typeof img.decode === 'function') {
+            img.decode().then(finishSuccess, finishSuccess);
+          } else {
+            finishSuccess();
+          }
+        };
+        img.onerror = finishError;
+        img.src = cleanUrl;
+      });
+
+      inFlightLoadsRef.current.set(cleanUrl, promise);
+      return promise;
+    },
+    [touchCacheEntry]
+  );
 
   const getCachedImageSrc = useCallback((item: PortfolioItem): string | null => {
     const primary = (item.fullUrl || item.thumbUrl || '').trim();
@@ -155,7 +177,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     [loadAndDecodeUrl]
   );
 
-  // Reset state cleanly when modal closes
   useEffect(() => {
     if (!isOpen) {
       loadRequestIdRef.current += 1;
@@ -172,11 +193,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       panRef.current = { x: 0, y: 0 };
       dragStateRef.current = null;
       didDragRef.current = false;
+      touchSwipeStartRef.current = null;
       pendingDirectionRef.current = 'fade';
     }
   }, [isOpen]);
 
-  // Reset pan offset whenever zoom turns off or active slide changes
   useEffect(() => {
     if (!isZoomed) {
       panRef.current = { x: 0, y: 0 };
@@ -189,7 +210,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     }
   }, [isZoomed, displayedSlide?.key]);
 
-  // Cleanup exit timer on unmount
   useEffect(() => {
     return () => {
       if (exitTimerRef.current !== null) {
@@ -198,20 +218,19 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     };
   }, []);
 
-  // Preload & decode project images in priority order (adjacent first, then rest of project)
   useEffect(() => {
     if (!isOpen || items.length <= 1) return;
 
     const orderedIndices: number[] = [];
-    const seen = new Set<number>([itemIndex]);
+    const seen = new Set<number>([safeIndex]);
 
     for (let offset = 1; offset < items.length; offset++) {
-      const nextIdx = (itemIndex + offset) % items.length;
+      const nextIdx = (safeIndex + offset) % items.length;
       if (!seen.has(nextIdx)) {
         seen.add(nextIdx);
         orderedIndices.push(nextIdx);
       }
-      const prevIdx = (itemIndex - offset + items.length) % items.length;
+      const prevIdx = (safeIndex - offset + items.length) % items.length;
       if (!seen.has(prevIdx)) {
         seen.add(prevIdx);
         orderedIndices.push(prevIdx);
@@ -220,7 +239,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
     let cancelled = false;
     const warmQueue = async () => {
-      // Preload immediate neighbors in parallel first for instant responsiveness
       const immediate = orderedIndices.slice(0, 2);
       await Promise.all(
         immediate.map((idx) => {
@@ -231,7 +249,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         })
       );
 
-      // Then gently warm remaining images in the active project sequentially
       for (let i = 2; i < orderedIndices.length; i++) {
         if (cancelled) return;
         const item = items[orderedIndices[i]];
@@ -247,9 +264,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, itemIndex, items, loadAndDecodeUrl]);
+  }, [isOpen, safeIndex, items, loadAndDecodeUrl]);
 
-  // Synchronize slide transitions: decode before swapping so outgoing & incoming glide simultaneously with zero flash
   useEffect(() => {
     if (!isOpen || !currentItem) return;
 
@@ -262,7 +278,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     if (
       currentDisplayed &&
       currentDisplayed.item === currentItem &&
-      currentDisplayed.index === itemIndex &&
+      currentDisplayed.index === safeIndex &&
       currentDisplayed.projectTitle === activeProjectTitle
     ) {
       return;
@@ -284,7 +300,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       const previous = displayedSlideRef.current;
       const nextSlide: ActiveSlide = {
         item: currentItem,
-        index: itemIndex,
+        index: safeIndex,
         projectTitle: activeProjectTitle,
         src: resolvedSrc,
         key: ++transitionCounterRef.current,
@@ -316,14 +332,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       return;
     }
 
-    // Fast synchronous path if image is already decoded in memory
     const cachedSrc = getCachedImageSrc(currentItem);
     if (cachedSrc) {
       commitSlide(cachedSrc);
       return;
     }
 
-    // Otherwise keep the current slide rock-solid while decoding the incoming image
     setIsTransitioningImage(true);
     resolveImageSrc(currentItem).then((resolvedSrc) => {
       commitSlide(resolvedSrc);
@@ -331,14 +345,13 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   }, [
     isOpen,
     currentItem,
-    itemIndex,
+    safeIndex,
     items,
     activeProjectTitle,
     getCachedImageSrc,
     resolveImageSrc,
   ]);
 
-  // Keyboard navigation, silent Ctrl/Cmd+S guard & body scroll lock
   useEffect(() => {
     if (!isOpen) return;
 
@@ -354,10 +367,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         onClose();
       } else if (e.key === 'ArrowRight' && items.length > 1) {
         pendingDirectionRef.current = 'next';
-        onNavigate((itemIndex + 1) % items.length);
+        onNavigate((safeIndex + 1) % items.length);
       } else if (e.key === 'ArrowLeft' && items.length > 1) {
         pendingDirectionRef.current = 'prev';
-        onNavigate((itemIndex - 1 + items.length) % items.length);
+        onNavigate((safeIndex - 1 + items.length) % items.length);
       }
     };
 
@@ -366,31 +379,34 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       document.body.style.overflow = originalOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, itemIndex, items.length, onClose, onNavigate]);
+  }, [isOpen, safeIndex, items.length, onClose, onNavigate]);
 
   if (!isOpen || !currentItem) return null;
 
   const isVideo = currentItem.type === 'video';
   const categoryLabel = (currentItem.category || 'Selected Work').replace(/_/g, ' ');
-  const paddedIndex = String(itemIndex + 1).padStart(2, '0');
+  const paddedIndex = String(safeIndex + 1).padStart(2, '0');
   const paddedTotal = String(items.length).padStart(2, '0');
   const showFilmstrip = Boolean(activeProjectTitle && items.length > 1);
+  const dialogLabel = activeProjectTitle
+    ? `${activeProjectTitle} — ${categoryLabel}`
+    : `${categoryLabel} viewer`;
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
     pendingDirectionRef.current = 'prev';
-    onNavigate((itemIndex - 1 + items.length) % items.length);
+    onNavigate((safeIndex - 1 + items.length) % items.length);
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
     pendingDirectionRef.current = 'next';
-    onNavigate((itemIndex + 1) % items.length);
+    onNavigate((safeIndex + 1) % items.length);
   };
 
   const handleFilmstripSelect = (targetIdx: number) => {
-    if (targetIdx === itemIndex) return;
-    pendingDirectionRef.current = targetIdx > itemIndex ? 'next' : 'prev';
+    if (targetIdx === safeIndex) return;
+    pendingDirectionRef.current = targetIdx > safeIndex ? 'next' : 'prev';
     onNavigate(targetIdx);
   };
 
@@ -402,6 +418,32 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const handleNextProjectClick = () => {
     pendingDirectionRef.current = 'fade';
     onNextProject?.();
+  };
+
+  const handleStageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (isZoomed || items.length <= 1 || e.touches.length !== 1) return;
+    touchSwipeStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  };
+
+  const handleStageTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const start = touchSwipeStartRef.current;
+    touchSwipeStartRef.current = null;
+    if (!start || isZoomed || items.length <= 1 || e.changedTouches.length === 0) return;
+
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+      if (dx < 0) {
+        pendingDirectionRef.current = 'next';
+        onNavigate((safeIndex + 1) % items.length);
+      } else {
+        pendingDirectionRef.current = 'prev';
+        onNavigate((safeIndex - 1 + items.length) % items.length);
+      }
+    }
   };
 
   const getEnterClass = (dir: SlideDirection) =>
@@ -559,8 +601,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           src={slide.src}
           alt={
             slide.projectTitle
-              ? `${slide.projectTitle} — ${slideCategory}`
-              : `${slideCategory} showcase`
+              ? `${slide.projectTitle} — ${slideCategory} by Rami Hendi`
+              : `${slideCategory} 3D showcase by Rami Hendi`
           }
           draggable={false}
           decoding="sync"
@@ -568,9 +610,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           onContextMenu={blockMediaAction}
           onDragStart={blockMediaAction}
           onError={(e) => {
+            const imgEl = e.currentTarget;
+            if (imgEl.dataset.fallbackTried === '1') return;
             const fallback = (slide.item.thumbUrl || '').trim();
-            if (fallback && (e.target as HTMLImageElement).src !== fallback) {
-              (e.target as HTMLImageElement).src = fallback;
+            if (fallback && imgEl.src !== fallback) {
+              imgEl.dataset.fallbackTried = '1';
+              imgEl.src = fallback;
             }
           }}
           className={`block max-w-full w-auto h-auto object-contain protected-img ${
@@ -579,7 +624,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               : 'max-h-[calc(100vh-13rem)] sm:max-h-[calc(100vh-12rem)]'
           }`}
         />
-        {/* Transparent protective shield above the full-resolution image */}
         <div
           aria-hidden="true"
           onContextMenu={blockMediaAction}
@@ -594,11 +638,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
+      aria-label={dialogLabel}
       onContextMenu={blockMediaAction}
       onDragStart={blockMediaAction}
       className="fixed inset-0 z-50 bg-darkroom/98 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 protected-media"
     >
-      {/* Top Darkroom Bar (Project Name + Unboxed Metadata, No File Names, No New-Tab Button) */}
       <div className="relative flex items-center justify-between gap-4 z-20 pb-3 border-b border-white/[0.08]">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs min-w-0">
           {activeProjectTitle && (
@@ -636,6 +680,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               className="w-9 h-9 rounded-sm bg-charcoal hover:bg-panel border border-white/10 text-zinc-200 hover:text-zinc-100 text-xs flex items-center justify-center transition-colors duration-150 cursor-pointer"
             >
               <i
+                aria-hidden="true"
                 className={
                   isZoomed
                     ? 'fa-solid fa-magnifying-glass-minus'
@@ -652,11 +697,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Close fullscreen viewer"
             className="w-9 h-9 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-zinc-200 text-sm flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i className="fa-solid fa-xmark"></i>
+            <i aria-hidden="true" className="fa-solid fa-xmark"></i>
           </button>
         </div>
 
-        {/* Hairline loading progress accent when decoding an uncached 4K frame */}
         {isTransitioningImage && (
           <div
             aria-hidden="true"
@@ -667,9 +711,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         )}
       </div>
 
-      {/* Center Darkroom Dual-Layer Cross-Slide Media Stage */}
       <div className="relative flex-1 flex items-center justify-center overflow-hidden my-3 sm:my-4">
-        {/* Previous Button */}
         {items.length > 1 && (
           <button
             type="button"
@@ -677,18 +719,18 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Previous view"
             className="absolute left-2 sm:left-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i className="fa-solid fa-chevron-left text-xs"></i>
+            <i aria-hidden="true" className="fa-solid fa-chevron-left text-xs"></i>
           </button>
         )}
 
-        {/* Dual-Layer Protected Media Stage (Outgoing & Incoming Animate Simultaneously) */}
         <div
           ref={stageRef}
+          onTouchStart={handleStageTouchStart}
+          onTouchEnd={handleStageTouchEnd}
           onContextMenu={blockMediaAction}
           onDragStart={blockMediaAction}
           className="relative w-full h-full overflow-hidden protected-media"
         >
-          {/* Outgoing Slide Layer */}
           {exitingSlide && (
             <div
               key={`exit-${exitingSlide.key}`}
@@ -701,7 +743,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             </div>
           )}
 
-          {/* Active / Incoming Slide Layer */}
           {displayedSlide ? (
             <div
               key={`active-${displayedSlide.key}`}
@@ -718,7 +759,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           )}
         </div>
 
-        {/* Next Button */}
         {items.length > 1 && (
           <button
             type="button"
@@ -726,11 +766,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Next view"
             className="absolute right-2 sm:right-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i className="fa-solid fa-chevron-right text-xs"></i>
+            <i aria-hidden="true" className="fa-solid fa-chevron-right text-xs"></i>
           </button>
         )}
 
-        {/* Corner Reset Zoom Button (visible while zoomed in) */}
         {!isVideo && isZoomed && (
           <button
             type="button"
@@ -741,18 +780,17 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Reset zoom to default view"
             className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 z-30 px-2.5 py-1.5 rounded-sm bg-obsidian/85 hover:bg-brass hover:text-obsidian backdrop-blur-md border border-white/15 hover:border-brass text-xs font-medium text-zinc-200 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shadow-lg"
           >
-            <i className="fa-solid fa-rotate-left text-[10px]"></i>
+            <i aria-hidden="true" className="fa-solid fa-rotate-left text-[10px]"></i>
             <span>Reset Zoom</span>
           </button>
         )}
       </div>
 
-      {/* Bottom Project Filmstrip + Hairline Caption Bar */}
       <div className="space-y-3 z-20">
         {showFilmstrip && (
           <div className="flex items-center justify-center gap-2 overflow-x-auto no-scrollbar py-1">
             {items.map((thumbItem, idx) => {
-              const isActive = idx === itemIndex;
+              const isActive = idx === safeIndex;
               const thumbSrc = (thumbItem.thumbUrl || thumbItem.fullUrl || '').trim();
               return (
                 <button
@@ -773,6 +811,10 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                       src={thumbSrc}
                       alt=""
                       aria-hidden="true"
+                      width={80}
+                      height={48}
+                      loading="lazy"
+                      decoding="async"
                       draggable={false}
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover protected-img"
@@ -782,7 +824,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   )}
                   {thumbItem.type === 'video' && (
                     <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-zinc-100">
-                      <i className="fa-solid fa-play text-[9px]"></i>
+                      <i aria-hidden="true" className="fa-solid fa-play text-[9px]"></i>
                     </span>
                   )}
                   <span
@@ -813,7 +855,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   }
                   className="px-3 py-1.5 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-xs font-medium text-zinc-200 transition-colors duration-150 whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
                 >
-                  <i className="fa-solid fa-chevron-left text-[10px]"></i>
+                  <i aria-hidden="true" className="fa-solid fa-chevron-left text-[10px]"></i>
                   <span>Previous Project</span>
                 </button>
 
@@ -835,7 +877,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   className="px-3 py-1.5 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-xs font-medium text-zinc-200 transition-colors duration-150 whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>Next Project</span>
-                  <i className="fa-solid fa-chevron-right text-[10px]"></i>
+                  <i aria-hidden="true" className="fa-solid fa-chevron-right text-[10px]"></i>
                 </button>
               </div>
             )}

@@ -6,7 +6,7 @@ interface ToastProps {
   isWarning?: boolean;
 }
 
-export const Toast: React.FC<ToastProps> = ({ show, message, isWarning }) => {
+export const Toast: React.FC<ToastProps> = React.memo(({ show, message, isWarning }) => {
   if (!show) return null;
 
   return (
@@ -17,6 +17,7 @@ export const Toast: React.FC<ToastProps> = ({ show, message, isWarning }) => {
     >
       <div className="bg-charcoal border border-white/15 text-zinc-100 px-4 py-3 rounded-sm shadow-2xl flex items-center gap-3">
         <i
+          aria-hidden="true"
           className={
             isWarning
               ? 'fa-solid fa-triangle-exclamation text-brass text-sm'
@@ -27,4 +28,6 @@ export const Toast: React.FC<ToastProps> = ({ show, message, isWarning }) => {
       </div>
     </div>
   );
-};
+});
+
+Toast.displayName = 'Toast';

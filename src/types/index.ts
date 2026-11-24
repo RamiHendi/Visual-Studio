@@ -27,7 +27,6 @@ export interface PortfolioProject {
   featured?: boolean;
   coverUrl: string;
   items: PortfolioItem[];
-  /** True when backed by an explicit Google Drive project subfolder */
   isProjectGroup?: boolean;
 }
 
@@ -42,11 +41,18 @@ export interface StudioData {
   studioName: string;
   updatedAt: string;
   cvPdfUrl: string;
+  visitorCount?: number;
   cv: CVElement[];
   portfolio: PortfolioCategory[];
 }
 
 export type MainTab = 'portfolio' | 'cv';
+
+export interface NavigationMetadata {
+  section: string;
+  category?: string;
+  subCategory?: string;
+}
 
 export interface CVRole {
   header: string;

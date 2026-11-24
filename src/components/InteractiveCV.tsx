@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
-import { CVElement, CVSection, CVRole } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { CVElement, CVSection, CVRole, NavigationMetadata } from '../types';
 
 interface InteractiveCVProps {
   elements: CVElement[];
   cvPdfUrl: string;
+  onNavigationChange?: (meta: NavigationMetadata) => void;
 }
 
 const KNOWN_SECTION_HEADINGS = new Set([
@@ -80,7 +81,6 @@ function isRoleHeaderLine(text: string, sectionTitle: string): boolean {
   if (/earlier|prior|additional/i.test(sectionTitle)) return false;
   if (!/experience|employment|career|work/i.test(sectionTitle)) return false;
 
-  // Match tab-separated date or pipe-separated role + date range (e.g. "Role | Company \tFeb 2024 - Present")
   if (text.includes('\t') && DATE_RANGE_RE.test(text)) return true;
   if (text.includes('|') && DATE_RANGE_RE.test(text)) return true;
   if (/[—–]/.test(text) && DATE_RANGE_RE.test(text) && text.length < 140) return true;
@@ -97,7 +97,6 @@ function parseRoleHeader(raw: string): {
   let company = '';
   let dateOrMeta = '';
 
-  // 1. Extract tab-separated trailing date/meta first (common in Google Docs resumes)
   if (working.includes('\t')) {
     const tabParts = working
       .split('\t')
@@ -111,7 +110,6 @@ function parseRoleHeader(raw: string): {
     }
   }
 
-  // 2. Parse pipe-separated segments
   if (working.includes('|')) {
     const parts = working
       .split('|')
@@ -130,7 +128,6 @@ function parseRoleHeader(raw: string): {
     working = parts[0] || working;
   }
 
-  // 3. Fallback to em-dash or spaced-hyphen split
   if (working.includes('—')) {
     const parts = working.split('—').map((part) => normalizeWhitespace(part));
     roleTitle = parts[0];
@@ -151,7 +148,9 @@ function parseCompactTimelineLine(text: string): {
   period: string;
 } | null {
   const clean = normalizeWhitespace(text);
-  const match = clean.match(/^(.*?)\s*\(((?:19|20)\d{2}(?:\s*[-–—]\s*(?:(?:19|20)\d{2}|Present))?)\)\s*$/i);
+  const match = clean.match(
+    /^(.*?)\s*\(((?:19|20)\d{2}(?:\s*[-–—]\s*(?:(?:19|20)\d{2}|Present))?)\)\s*$/i
+  );
   if (!match) return null;
   return {
     main: match[1].trim(),
@@ -168,7 +167,20 @@ function splitSkillLabel(text: string): { label: string; detail: string } | null
   return { label, detail };
 }
 
-export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl }) => {
+export const InteractiveCV: React.FC<InteractiveCVProps> = ({
+  elements,
+  cvPdfUrl,
+  onNavigationChange,
+}) => {
+  const [activeSectionTitle, setActiveSectionTitle] = useState<string>('');
+  const [activeRole, setActiveRole] = useState<{ section: string; role: string } | null>(
+    null
+  );
+  const sectionNodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const roleNodesRef = useRef<Map<string, { section: string; role: string; node: HTMLDivElement }>>(
+    new Map()
+  );
+
   const { sections, headerSubtitle, contactTokens } = useMemo(() => {
     if (!elements || elements.length === 0) {
       return {
@@ -186,13 +198,11 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
     let extractedContacts: string[] = [];
     let startIndex = 0;
 
-    // Extract explicit TITLE / SUBTITLE if present
     const explicitSubtitleEl = elements.find((el) => el.heading === 'SUBTITLE');
     if (explicitSubtitleEl?.text?.trim()) {
       extractedSubtitle = normalizeWhitespace(explicitSubtitleEl.text);
     }
 
-    // For plain-text / NORMAL-styled Google Docs, parse leading name/subtitle/contact header lines
     if (!hasExplicitHeadings) {
       let i = 0;
       while (i < elements.length && i < 4) {
@@ -206,7 +216,6 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
           break;
         }
         if (i === 0 && cleanText.length <= 40 && !cleanText.includes('@') && !cleanText.includes('|')) {
-          // Name line (e.g. "RAMI HENDI") — already represented in Monograph header
           i++;
           continue;
         }
@@ -313,7 +322,94 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
     };
   }, [elements]);
 
-  const isDemoPdf = !cvPdfUrl || cvPdfUrl.includes('DEMO_DOC_ID');
+  useEffect(() => {
+    if (sections.length === 0) {
+      setActiveSectionTitle('');
+      setActiveRole(null);
+      return;
+    }
+    setActiveSectionTitle((prev) =>
+      prev && sections.some((s) => s.title === prev) ? prev : sections[0].title
+    );
+  }, [sections]);
+
+  useEffect(() => {
+    if (sections.length === 0 || typeof IntersectionObserver === 'undefined') return;
+
+    const sectionObserver = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length > 0) {
+          const title = visible[0].target.getAttribute('data-cv-section') || '';
+          if (title) {
+            setActiveSectionTitle(title);
+            const matchedSec = sections.find((s) => s.title === title);
+            if (!matchedSec || matchedSec.roles.length === 0) {
+              setActiveRole(null);
+            }
+          }
+        }
+      },
+      {
+        rootMargin: '-110px 0px -65% 0px',
+        threshold: 0,
+      }
+    );
+
+    sectionNodesRef.current.forEach((node) => sectionObserver.observe(node));
+
+    const roleObserver = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length > 0) {
+          const secTitle = visible[0].target.getAttribute('data-cv-role-section') || '';
+          const roleTitle = visible[0].target.getAttribute('data-cv-role-title') || '';
+          if (secTitle) setActiveSectionTitle(secTitle);
+          if (secTitle && roleTitle) {
+            setActiveRole({ section: secTitle, role: roleTitle });
+          }
+        }
+      },
+      {
+        rootMargin: '-120px 0px -70% 0px',
+        threshold: 0,
+      }
+    );
+
+    roleNodesRef.current.forEach((entry) => roleObserver.observe(entry.node));
+
+    return () => {
+      sectionObserver.disconnect();
+      roleObserver.disconnect();
+    };
+  }, [sections]);
+
+  useEffect(() => {
+    const resolvedSection = activeSectionTitle || sections[0]?.title || undefined;
+    const matchedSection = sections.find((s) => s.title === resolvedSection);
+    const resolvedRole =
+      matchedSection &&
+      matchedSection.roles.length > 0 &&
+      activeRole &&
+      activeRole.section === resolvedSection
+        ? activeRole.role
+        : undefined;
+
+    onNavigationChange?.({
+      section: 'Curriculum Vitae',
+      category: resolvedSection,
+      subCategory: resolvedRole,
+    });
+  }, [activeSectionTitle, activeRole, sections, onNavigationChange]);
+
+  const isDemoPdf =
+    !cvPdfUrl ||
+    cvPdfUrl.includes('DEMO_DOC_ID') ||
+    cvPdfUrl.includes('PASTE_YOUR_');
 
   const handleExportPdf = (e: React.MouseEvent) => {
     if (isDemoPdf) {
@@ -329,14 +425,16 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
     : 'Rami Hendi · 3D Artist (Generalist) · 10+ Years of Experience';
 
   return (
-    <section className="space-y-12 pt-2 sm:pt-6">
-      {/* Editorial Monograph CV Header */}
+    <section aria-labelledby="cv-page-heading" className="space-y-12 pt-2 sm:pt-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-8 border-b border-white/[0.08]">
         <div className="space-y-2.5">
           <p className="text-xs font-mono text-zinc-400 tracking-wide">
             {eyebrowText}
           </p>
-          <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-zinc-100 leading-tight [text-wrap:balance]">
+          <h1
+            id="cv-page-heading"
+            className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-zinc-100 leading-tight [text-wrap:balance]"
+          >
             Curriculum Vitae
           </h1>
           {contactTokens.length > 0 ? (
@@ -387,7 +485,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
             onClick={() => window.print()}
             className="px-4 py-2.5 rounded-sm bg-transparent hover:bg-charcoal text-zinc-200 border border-white/15 hover:border-white/30 text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <i className="fa-solid fa-print text-xs text-zinc-400"></i>
+            <i aria-hidden="true" className="fa-solid fa-print text-xs text-zinc-400"></i>
             <span>Print View</span>
           </button>
 
@@ -395,16 +493,16 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
             href={isDemoPdf ? '#cv-pdf' : cvPdfUrl}
             target={isDemoPdf ? '_self' : '_blank'}
             rel="noopener noreferrer"
+            download={!isDemoPdf}
             onClick={handleExportPdf}
             className="px-5 py-2.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian font-semibold text-xs sm:text-sm flex items-center gap-2 transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <i className="fa-solid fa-file-arrow-down text-xs"></i>
+            <i aria-hidden="true" className="fa-solid fa-file-arrow-down text-xs"></i>
             <span>Download PDF</span>
           </a>
         </div>
       </div>
 
-      {/* Structured Editorial Monograph Sections */}
       {sections.length === 0 ? (
         <div className="py-16 text-center text-sm text-zinc-400 border border-white/[0.08] bg-charcoal/40 rounded-sm">
           No CV content available at this time.
@@ -420,11 +518,18 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
             return (
               <div
                 key={secIdx}
+                data-cv-section={sec.title}
+                ref={(node) => {
+                  if (node) {
+                    sectionNodesRef.current.set(sec.title, node);
+                  } else {
+                    sectionNodesRef.current.delete(sec.title);
+                  }
+                }}
                 className={`grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12 ${
                   secIdx === 0 ? 'pb-10 sm:pb-12' : 'py-10 sm:py-12'
                 }`}
               >
-                {/* Left Index Column */}
                 <div className="lg:col-span-4 space-y-1.5">
                   <div className="font-mono text-xs text-brass tabular-nums">
                     {formatSectionNumber(secIdx)}
@@ -434,9 +539,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                   </h2>
                 </div>
 
-                {/* Right Monograph Content Column */}
                 <div className="lg:col-span-8 space-y-6">
-                  {/* Direct Section Paragraphs (or Compact Timeline Rows for Earlier Experience / Education) */}
                   {sec.paragraphs.length > 0 &&
                     (hasCompactTimeline ? (
                       <div className="divide-y divide-white/[0.07]">
@@ -465,7 +568,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                         {sec.paragraphs.map((p, pIdx) => (
                           <p
                             key={pIdx}
-                            className="text-sm sm:text-base text-zinc-300 leading-relaxed max-w-2xl"
+                            className="text-sm sm:text-base text-zinc-300 leading-relaxed max-w-2xl text-justify"
                           >
                             {p}
                           </p>
@@ -473,7 +576,6 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                       </div>
                     ))}
 
-                  {/* Direct Section Bullets */}
                   {sec.bullets.length > 0 &&
                     (isSkillsSection ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-0">
@@ -489,12 +591,12 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                                   <div className="font-display font-medium text-zinc-100">
                                     {labeled.label}
                                   </div>
-                                  <div className="text-zinc-400 text-xs sm:text-sm leading-relaxed">
+                                  <div className="text-zinc-400 text-xs sm:text-sm leading-relaxed text-justify">
                                     {labeled.detail}
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-zinc-200">{b}</span>
+                                <span className="text-zinc-200 block text-justify">{b}</span>
                               )}
                             </div>
                           );
@@ -513,13 +615,12 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                             >
                               —
                             </span>
-                            <span>{b}</span>
+                            <span className="text-justify">{b}</span>
                           </li>
                         ))}
                       </ul>
                     ))}
 
-                  {/* Sub-Roles / Experience Entries */}
                   {sec.roles.length > 0 && (
                     <div className="divide-y divide-white/[0.07]">
                       {sec.roles.map((role, rIdx) => {
@@ -527,6 +628,20 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                         return (
                           <div
                             key={rIdx}
+                            data-cv-role-section={sec.title}
+                            data-cv-role-title={parsed.roleTitle}
+                            ref={(node) => {
+                              const roleKey = `${sec.title}::${rIdx}`;
+                              if (node) {
+                                roleNodesRef.current.set(roleKey, {
+                                  section: sec.title,
+                                  role: parsed.roleTitle,
+                                  node,
+                                });
+                              } else {
+                                roleNodesRef.current.delete(roleKey);
+                              }
+                            }}
                             className={`${rIdx === 0 ? 'pb-7' : 'py-7'} space-y-3`}
                           >
                             <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1.5">
@@ -551,7 +666,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                             {role.paragraphs.map((rp, rpIdx) => (
                               <p
                                 key={rpIdx}
-                                className="text-sm text-zinc-300 leading-relaxed max-w-2xl"
+                                className="text-sm text-zinc-300 leading-relaxed max-w-2xl text-justify"
                               >
                                 {rp}
                               </p>
@@ -570,7 +685,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({ elements, cvPdfUrl
                                     >
                                       —
                                     </span>
-                                    <span>{rb}</span>
+                                    <span className="text-justify">{rb}</span>
                                   </li>
                                 ))}
                               </ul>

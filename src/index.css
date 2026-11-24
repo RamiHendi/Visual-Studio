@@ -21,7 +21,6 @@ body {
   overflow-x: hidden;
 }
 
-/* Minimal Obsidian Scrollbar */
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
@@ -37,7 +36,6 @@ body {
   background: #52D1FF;
 }
 
-/* Smooth Darkroom Lightbox Zoom & Pan */
 .lightbox-img-zoomed {
   transform: translate3d(0, 0, 0) scale(1.85);
   cursor: grab;
@@ -50,7 +48,6 @@ body {
   cursor: zoom-in;
 }
 
-/* Utility to hide scrollbar */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -59,7 +56,6 @@ body {
   scrollbar-width: none;
 }
 
-/* Studio Showcase Category Transition Animation (Compositor-Only) */
 @keyframes studioFadeSlideDown {
   from {
     opacity: 0;
@@ -75,7 +71,6 @@ body {
   animation: studioFadeSlideDown 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Subtle staggered cascade (45ms step, capped at 360ms) */
 .studio-card-enter:nth-child(1) { animation-delay: 0ms; }
 .studio-card-enter:nth-child(2) { animation-delay: 45ms; }
 .studio-card-enter:nth-child(3) { animation-delay: 90ms; }
@@ -86,7 +81,6 @@ body {
 .studio-card-enter:nth-child(8) { animation-delay: 315ms; }
 .studio-card-enter:nth-child(n + 9) { animation-delay: 360ms; }
 
-/* Darkroom Lightbox Dual-Layer Directional Cross-Slide Transitions (Compositor-Only) */
 @keyframes lightboxEnterNext {
   from {
     opacity: 0;
@@ -209,7 +203,6 @@ body {
   }
 }
 
-/* Portfolio Media Protection Utilities */
 .protected-media {
   user-select: none;
   -webkit-user-select: none;
@@ -224,7 +217,6 @@ body {
   -webkit-touch-callout: none;
 }
 
-/* Ambient Architectural Geometric Line Animations */
 @keyframes geoTraceFlow {
   0% {
     stroke-dashoffset: 1800;
@@ -329,7 +321,6 @@ body {
   }
 }
 
-/* Clean Print Mode for Curriculum Vitae */
 @media print {
   body {
     background-color: #FFFFFF !important;
