@@ -16,7 +16,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
         >
           <span className="inline-flex items-center gap-2">
             <img
-              src="/assets/aistudio/Logo_9abd8455.png"
+              src="./assets/aistudio/Logo_9abd8455.png"
               alt=""
               aria-hidden="true"
               draggable={false}

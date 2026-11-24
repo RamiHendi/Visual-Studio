@@ -33,7 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="inline-flex items-center gap-2.5 sm:gap-3 font-display text-base sm:text-lg font-semibold tracking-tight text-zinc-100 hover:text-brass transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer protected-media focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass rounded-sm"
         >
           <img
-            src="/assets/aistudio/Logo_9abd8455.png"
+            src="./assets/aistudio/Logo_9abd8455.png"
             alt=""
             aria-hidden="true"
             draggable={false}
