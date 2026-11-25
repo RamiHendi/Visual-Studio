@@ -1,5 +1,108 @@
 import React from 'react';
 
+const LOGO_LEFT_ARROW_H =
+  'M 200 0 L 200 239 L 158 215 L 158 140 L 108 140 L 107 186 L 0 119.5 L 107 53 L 108 99 L 158 99 L 158 24 Z';
+
+const LOGO_R_UPPER_COUNTER =
+  'M 244 83 L 273 83 A 12 12 0 0 1 273 107 L 244 107 Z';
+
+const LOGO_R_LOWER_SHARD =
+  'M 243 149 L 259 149 L 278 195 L 244 216 Z';
+
+const LOGO_RIGHT_WING =
+  'M 321 71 L 400 119.5 L 315 172 L 302 142 C 322 128 331 98 321 71 Z';
+
+interface LogoWireframeProps {
+  translateX: number;
+  translateY: number;
+  scale: number;
+  floatClass: string;
+  compassRadius: number;
+  compassDash: string;
+  compassOpacity: number;
+  primaryTraceClass: string;
+  secondaryTraceClass: string;
+  primaryNodeClass: string;
+  secondaryNodeClass: string;
+  accentNodeClass: string;
+}
+
+const LogoWireframe: React.FC<LogoWireframeProps> = ({
+  translateX,
+  translateY,
+  scale,
+  floatClass,
+  compassRadius,
+  compassDash,
+  compassOpacity,
+  primaryTraceClass,
+  secondaryTraceClass,
+  primaryNodeClass,
+  secondaryNodeClass,
+  accentNodeClass,
+}) => {
+  const baseStroke = 1.05 / scale;
+  const traceStroke = 1.4 / scale;
+  const secondaryTraceStroke = 1.3 / scale;
+  const nodeRadiusLg = 2.3 / scale;
+  const nodeRadiusMd = 2.0 / scale;
+
+  return (
+    <g className={floatClass}>
+      <g transform={`translate(${translateX}, ${translateY}) scale(${scale})`}>
+        <g
+          stroke="url(#wireframeFacet)"
+          strokeWidth={baseStroke}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          fill="none"
+          filter="url(#whiteGlow)"
+        >
+          <path d={LOGO_LEFT_ARROW_H} />
+          <path d={LOGO_R_UPPER_COUNTER} />
+          <path d={LOGO_R_LOWER_SHARD} />
+          <path d={LOGO_RIGHT_WING} />
+
+          <circle
+            cx="200"
+            cy="119.5"
+            r={compassRadius}
+            stroke="#FFFFFF"
+            strokeWidth={1 / scale}
+            strokeOpacity={compassOpacity}
+            strokeDasharray={compassDash}
+          />
+        </g>
+
+        <g filter="url(#whiteGlowStrong)" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <path
+            d={LOGO_LEFT_ARROW_H}
+            pathLength={1400}
+            stroke="#FFFFFF"
+            strokeOpacity="0.72"
+            strokeWidth={traceStroke}
+            className={`geo-trace ${primaryTraceClass}`}
+          />
+          <path
+            d={`${LOGO_RIGHT_WING} ${LOGO_R_LOWER_SHARD}`}
+            pathLength={1400}
+            stroke="#F4F4F5"
+            strokeOpacity="0.65"
+            strokeWidth={secondaryTraceStroke}
+            className={`geo-trace ${secondaryTraceClass}`}
+          />
+        </g>
+
+        <g filter="url(#whiteGlow)">
+          <circle cx="0" cy="119.5" r={nodeRadiusLg} fill="#FFFFFF" className={`geo-node ${primaryNodeClass}`} />
+          <circle cx="200" cy="0" r={nodeRadiusMd} fill="#E4E4E7" className={`geo-node ${secondaryNodeClass}`} />
+          <circle cx="400" cy="119.5" r={nodeRadiusLg} fill="#FFFFFF" className={`geo-node ${accentNodeClass}`} />
+        </g>
+      </g>
+    </g>
+  );
+};
+
 export const AmbientGeometry: React.FC = React.memo(() => {
   return (
     <div
@@ -63,90 +166,57 @@ export const AmbientGeometry: React.FC = React.memo(() => {
         </defs>
 
         <g strokeWidth="1" fill="none">
-          <line x1="0" y1="168" x2="1440" y2="168" stroke="url(#lineFadeHorizontal)" />
-          <line x1="0" y1="540" x2="1440" y2="540" stroke="url(#lineFadeHorizontal)" opacity="0.65" />
-          <line x1="0" y1="774" x2="1440" y2="774" stroke="url(#lineFadeHorizontal)" opacity="0.55" />
+          <line x1="0" y1="256" x2="1440" y2="256" stroke="url(#lineFadeHorizontal)" />
+          <line x1="0" y1="540" x2="1440" y2="540" stroke="url(#lineFadeHorizontal)" opacity="0.6" />
+          <line x1="0" y1="725" x2="1440" y2="725" stroke="url(#lineFadeHorizontal)" opacity="0.55" />
 
           <path d="M -80 320 L 640 -40" stroke="url(#lineFadeDiagonal)" />
           <path d="M 840 -40 L 1520 355" stroke="url(#lineFadeDiagonal)" />
           <path d="M -60 880 L 760 440 L 1500 840" stroke="url(#lineFadeDiagonal)" opacity="0.8" />
-          <path d="M 1060 0 L 1060 900" stroke="url(#lineFadeVertical)" />
+          <path d="M 1180 0 L 1180 900" stroke="url(#lineFadeVertical)" />
           <path d="M 380 0 L 380 900" stroke="url(#lineFadeVertical)" opacity="0.65" />
         </g>
 
-        <g
-          className="geo-float-slow"
-          stroke="url(#wireframeFacet)"
-          strokeWidth="1.05"
-          fill="none"
-          filter="url(#whiteGlow)"
-        >
-          <polygon points="1180,68 1345,162 1345,350 1180,444 1015,350 1015,162" />
-          <line x1="1180" y1="68" x2="1180" y2="256" />
-          <line x1="1180" y1="256" x2="1345" y2="350" />
-          <line x1="1180" y1="256" x2="1015" y2="350" />
-          <line x1="1015" y1="162" x2="1180" y2="256" strokeOpacity="0.55" />
-          <line x1="1345" y1="162" x2="1180" y2="256" strokeOpacity="0.55" />
-          <polygon
-            points="1180,148 1272,201 1272,307 1180,360 1088,307 1088,201"
-            strokeOpacity="0.65"
-          />
-          <circle
-            cx="1180"
-            cy="256"
-            r="215"
-            stroke="#FFFFFF"
-            strokeOpacity="0.13"
-            strokeDasharray="4 10"
-          />
-        </g>
+        <LogoWireframe
+          translateX={980}
+          translateY={136}
+          scale={1}
+          floatClass="geo-float-slow"
+          compassRadius={228}
+          compassDash="4 10"
+          compassOpacity={0.13}
+          primaryTraceClass="geo-trace-2"
+          secondaryTraceClass="geo-trace-5"
+          primaryNodeClass="geo-node-1"
+          secondaryNodeClass="geo-node-2"
+          accentNodeClass="geo-node-3"
+        />
 
-        <g
-          className="geo-float-reverse"
-          stroke="url(#wireframeFacet)"
-          strokeWidth="1.05"
-          fill="none"
-          filter="url(#whiteGlow)"
-        >
-          <polygon points="180,570 320,650 320,810 180,890 40,810 40,650" />
-          <line x1="180" y1="570" x2="180" y2="730" />
-          <line x1="180" y1="730" x2="320" y2="810" />
-          <line x1="180" y1="730" x2="40" y2="810" />
-          <polyline points="-40,730 180,730 430,585" strokeOpacity="0.5" />
-          <circle
-            cx="180"
-            cy="730"
-            r="175"
-            stroke="#FFFFFF"
-            strokeOpacity="0.11"
-            strokeDasharray="3 9"
-          />
-        </g>
+        <LogoWireframe
+          translateX={45}
+          translateY={629}
+          scale={0.8}
+          floatClass="geo-float-reverse"
+          compassRadius={218}
+          compassDash="3 9"
+          compassOpacity={0.11}
+          primaryTraceClass="geo-trace-3"
+          secondaryTraceClass="geo-trace-2"
+          primaryNodeClass="geo-node-2"
+          secondaryNodeClass="geo-node-1"
+          accentNodeClass="geo-node-3"
+        />
 
         <g filter="url(#whiteGlowStrong)" fill="none" strokeLinecap="round">
           <path
-            d="M 0 168 L 1440 168"
+            d="M 0 256 L 1440 256"
             stroke="#FFFFFF"
             strokeOpacity="0.72"
             strokeWidth="1.45"
             className="geo-trace geo-trace-1"
           />
           <path
-            d="M 840 -40 L 1180 148 L 1345 162 L 1345 350 L 1180 444 L 1015 350"
-            stroke="#FFFFFF"
-            strokeOpacity="0.7"
-            strokeWidth="1.4"
-            className="geo-trace geo-trace-2"
-          />
-          <path
-            d="M -60 880 L 320 676 L 760 440 L 1500 840"
-            stroke="#F4F4F5"
-            strokeOpacity="0.65"
-            strokeWidth="1.35"
-            className="geo-trace geo-trace-3"
-          />
-          <path
-            d="M 1060 0 L 1060 900"
+            d="M 1180 0 L 1180 900"
             stroke="#FFFFFF"
             strokeOpacity="0.55"
             strokeWidth="1.25"
@@ -162,10 +232,7 @@ export const AmbientGeometry: React.FC = React.memo(() => {
         </g>
 
         <g filter="url(#whiteGlow)">
-          <circle cx="1180" cy="256" r="2.4" fill="#FFFFFF" className="geo-node geo-node-1" />
-          <circle cx="1345" cy="162" r="2" fill="#E4E4E7" className="geo-node geo-node-2" />
-          <circle cx="1060" cy="168" r="2.2" fill="#FFFFFF" className="geo-node geo-node-3" />
-          <circle cx="180" cy="730" r="2.2" fill="#E4E4E7" className="geo-node geo-node-2" />
+          <circle cx="1180" cy="256" r="2.2" fill="#FFFFFF" className="geo-node geo-node-3" />
           <circle cx="380" cy="540" r="1.9" fill="#FFFFFF" className="geo-node geo-node-1" />
         </g>
       </svg>
