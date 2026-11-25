@@ -3,9 +3,10 @@ import { MainTab } from '../types';
 
 interface FooterProps {
   onSelectTab: (tab: MainTab) => void;
+  onOpenContact: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = React.memo(({ onSelectTab }) => {
+export const Footer: React.FC<FooterProps> = React.memo(({ onSelectTab, onOpenContact }) => {
   return (
     <footer className="relative z-10 border-t border-white/[0.08] bg-obsidian/80 backdrop-blur-sm mt-16 sm:mt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
@@ -49,12 +50,13 @@ export const Footer: React.FC<FooterProps> = React.memo(({ onSelectTab }) => {
           >
             Interactive CV
           </button>
-          <a
-            href="mailto:rhhendy@gmail.com"
+          <button
+            type="button"
+            onClick={onOpenContact}
             className="text-zinc-400 hover:text-brass transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            rhhendy@gmail.com
-          </a>
+            Direct Contact
+          </button>
         </nav>
       </div>
     </footer>

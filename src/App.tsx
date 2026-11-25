@@ -9,12 +9,20 @@ import {
 } from './types';
 import {
   DEFAULT_APPS_SCRIPT_URL,
-  CACHE_KEY,
-  SAVED_URL_KEY,
   DEMO_STUDIO_DATA,
 } from './data/demoData';
 import { getAllPortfolioProjects } from './utils/portfolioProjects';
-import { getUniqueVisitorIpHash } from './utils/visitorTracker';
+import {
+  getAnonymousVisitorPing,
+  markAnonymousVisitReported,
+} from './utils/visitorTracker';
+import {
+  isValidLiveStudioData,
+  readStudioCache,
+  writeStudioCache,
+  updateCachedVisitorCount,
+} from './utils/studioCache';
+import { sanitizeAppsScriptUrl, sanitizeStudioData } from './utils/urlSecurity';
 import { syncPageSeo } from './utils/seo';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
@@ -26,10 +34,17 @@ import { Toast } from './components/Toast';
 import { Footer } from './components/Footer';
 import { AmbientGeometry } from './components/AmbientGeometry';
 
-const LIVE_PERSISTENT_CACHE_KEY = 'rami_hendi_visual_studio_live_cache_v3';
 const LIVE_FETCH_TIMEOUT_MS = 45000;
+const SNAPSHOT_FETCH_TIMEOUT_MS = 8000;
 const AUTO_REVALIDATE_INTERVAL_MS = 90000;
 const VISIBILITY_REVALIDATE_COOLDOWN_MS = 30000;
+const STATIC_SNAPSHOT_URL = './studio-snapshot.json';
+
+const parseUpdatedAtMs = (updatedAt?: string): number => {
+  if (!updatedAt) return 0;
+  const parsed = Date.parse(updatedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 const getStudioContentFingerprint = (data: StudioData | null): string => {
   if (!data) return '';
@@ -42,56 +57,6 @@ const getStudioContentFingerprint = (data: StudioData | null): string => {
   } catch {
     return '';
   }
-};
-
-const isValidLiveStudioData = (data: unknown): data is StudioData => {
-  if (!data || typeof data !== 'object') return false;
-  const candidate = data as StudioData;
-  if (!Array.isArray(candidate.portfolio)) return false;
-  const hasDemoItems = candidate.portfolio.some((cat) =>
-    (cat.items || []).some(
-      (item) => typeof item.id === 'string' && item.id.startsWith('demo-')
-    )
-  );
-  return !hasDemoItems;
-};
-
-const safeStorageRemove = (storage: Storage, key: string): void => {
-  try {
-    storage.removeItem(key);
-  } catch {
-    void 0;
-  }
-};
-
-const readCachedLiveData = (): { data: StudioData | null; isSessionFresh: boolean } => {
-  try {
-    const sessionRaw = sessionStorage.getItem(CACHE_KEY);
-    if (sessionRaw) {
-      const parsed = JSON.parse(sessionRaw);
-      if (isValidLiveStudioData(parsed) && parsed.portfolio.length > 0) {
-        return { data: parsed, isSessionFresh: true };
-      }
-      safeStorageRemove(sessionStorage, CACHE_KEY);
-    }
-  } catch {
-    safeStorageRemove(sessionStorage, CACHE_KEY);
-  }
-
-  try {
-    const localRaw = localStorage.getItem(LIVE_PERSISTENT_CACHE_KEY);
-    if (localRaw) {
-      const parsed = JSON.parse(localRaw);
-      if (isValidLiveStudioData(parsed) && parsed.portfolio.length > 0) {
-        return { data: parsed, isSessionFresh: false };
-      }
-      safeStorageRemove(localStorage, LIVE_PERSISTENT_CACHE_KEY);
-    }
-  } catch {
-    safeStorageRemove(localStorage, LIVE_PERSISTENT_CACHE_KEY);
-  }
-
-  return { data: null, isSessionFresh: false };
 };
 
 const getInitialTabFromUrl = (): MainTab => {
@@ -107,25 +72,11 @@ const getInitialTabFromUrl = (): MainTab => {
 };
 
 export const App: React.FC = () => {
-  const initialCacheRef = useRef<{ data: StudioData | null; isSessionFresh: boolean } | null>(null);
-  if (initialCacheRef.current === null) {
-    initialCacheRef.current = readCachedLiveData();
-  }
-
   const [currentTab, setCurrentTab] = useState<MainTab>(getInitialTabFromUrl);
-  const [studioData, setStudioData] = useState<StudioData>(
-    () => initialCacheRef.current?.data ?? DEMO_STUDIO_DATA
-  );
-  const [isLoading, setIsLoading] = useState<boolean>(
-    () => !initialCacheRef.current?.data
-  );
+  const [studioData, setStudioData] = useState<StudioData>(DEMO_STUDIO_DATA);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<boolean>(false);
-  const [visitorCount, setVisitorCount] = useState<number | null>(() => {
-    const cachedCount = initialCacheRef.current?.data?.visitorCount;
-    return typeof cachedCount === 'number' && Number.isFinite(cachedCount)
-      ? cachedCount
-      : null;
-  });
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [isContactOpen, setIsContactOpen] = useState<boolean>(false);
   const [portfolioNav, setPortfolioNav] = useState<NavigationMetadata>({
     section: 'Portfolio',
@@ -143,10 +94,10 @@ export const App: React.FC = () => {
   const toastTimerRef = useRef<number | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const handledDeepLinkRef = useRef<string | null>(null);
-  const hasLiveDataRef = useRef<boolean>(Boolean(initialCacheRef.current?.data));
-  const contentFingerprintRef = useRef<string>(
-    getStudioContentFingerprint(initialCacheRef.current?.data ?? null)
-  );
+  const hasLiveDataRef = useRef<boolean>(false);
+  const hydrationRankRef = useRef<number>(0);
+  const hydratedUpdatedAtRef = useRef<number>(0);
+  const contentFingerprintRef = useRef<string>('');
   const activeFetchControllerRef = useRef<AbortController | null>(null);
   const isFetchingRef = useRef<boolean>(false);
   const lastSyncTimeRef = useRef<number>(0);
@@ -196,15 +147,7 @@ export const App: React.FC = () => {
   }, []);
 
   const getActiveAppsScriptUrl = useCallback((): string => {
-    try {
-      const saved = localStorage.getItem(SAVED_URL_KEY);
-      if (saved && saved.trim() !== '') {
-        return saved.trim();
-      }
-    } catch {
-      void 0;
-    }
-    return DEFAULT_APPS_SCRIPT_URL.trim();
+    return sanitizeAppsScriptUrl(DEFAULT_APPS_SCRIPT_URL);
   }, []);
 
   const loadData = useCallback(
@@ -240,6 +183,7 @@ export const App: React.FC = () => {
       setLoadError(false);
 
       let didTimeout = false;
+      let willRetry = false;
       const timeoutId = window.setTimeout(() => {
         didTimeout = true;
         controller.abort();
@@ -252,14 +196,16 @@ export const App: React.FC = () => {
         const response = await fetch(requestUrl.toString(), {
           signal: controller.signal,
           cache: 'no-store',
+          referrerPolicy: 'no-referrer',
         });
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const liveData = (await response.json()) as StudioData;
+        const rawLiveData = (await response.json()) as unknown;
 
         if (controller.signal.aborted || !isMountedRef.current) return;
 
-        if (isValidLiveStudioData(liveData)) {
+        if (isValidLiveStudioData(rawLiveData)) {
+          const liveData = sanitizeStudioData(rawLiveData);
           lastSyncTimeRef.current = Date.now();
           if (
             typeof liveData.visitorCount === 'number' &&
@@ -277,6 +223,8 @@ export const App: React.FC = () => {
           if (hasNewPortfolioItems || !hasLiveDataRef.current) {
             if (hasNewPortfolioItems) {
               hasLiveDataRef.current = true;
+              hydrationRankRef.current = 3;
+              hydratedUpdatedAtRef.current = parseUpdatedAtMs(liveData.updatedAt);
             }
             if (contentChanged || !contentFingerprintRef.current) {
               contentFingerprintRef.current = nextFingerprint;
@@ -284,13 +232,7 @@ export const App: React.FC = () => {
             }
             setLoadError(false);
             if (hasNewPortfolioItems) {
-              try {
-                const serialized = JSON.stringify(liveData);
-                sessionStorage.setItem(CACHE_KEY, serialized);
-                localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
-              } catch {
-                void 0;
-              }
+              void writeStudioCache(liveData);
             }
           }
         }
@@ -298,6 +240,7 @@ export const App: React.FC = () => {
         const wasReplacedOrUnmounted = controller.signal.aborted && !didTimeout;
         if (!wasReplacedOrUnmounted && isMountedRef.current) {
           if (attempt < 1) {
+            willRetry = true;
             retryTimerRef.current = window.setTimeout(() => {
               retryTimerRef.current = null;
               if (isMountedRef.current) {
@@ -314,7 +257,7 @@ export const App: React.FC = () => {
           activeFetchControllerRef.current = null;
           isFetchingRef.current = false;
         }
-        if (isMountedRef.current) {
+        if (isMountedRef.current && !willRetry) {
           setIsLoading(false);
         }
       }
@@ -327,7 +270,81 @@ export const App: React.FC = () => {
   }, [loadData]);
 
   useEffect(() => {
-    loadData({ force: true });
+    let cancelled = false;
+    const snapshotController = new AbortController();
+
+    const applyTierData = (data: StudioData, rank: 1 | 2) => {
+      if (cancelled || !isMountedRef.current) return;
+      if (hydrationRankRef.current >= 3) return;
+
+      const incomingTs = parseUpdatedAtMs(data.updatedAt);
+      if (rank < hydrationRankRef.current) {
+        if (!(rank === 1 && hydrationRankRef.current === 2 && incomingTs > hydratedUpdatedAtRef.current)) {
+          return;
+        }
+      }
+
+      hydrationRankRef.current = Math.max(hydrationRankRef.current, rank);
+      hydratedUpdatedAtRef.current = Math.max(hydratedUpdatedAtRef.current, incomingTs);
+      hasLiveDataRef.current = true;
+
+      const nextFingerprint = getStudioContentFingerprint(data);
+      if (nextFingerprint !== contentFingerprintRef.current) {
+        contentFingerprintRef.current = nextFingerprint;
+        setStudioData(data);
+      }
+
+      if (typeof data.visitorCount === 'number' && Number.isFinite(data.visitorCount)) {
+        setVisitorCount((prev) =>
+          prev === null ? data.visitorCount! : Math.max(prev, data.visitorCount!)
+        );
+      }
+      setLoadError(false);
+      setIsLoading(false);
+    };
+
+    const hydrateFromIndexedDB = async () => {
+      const cached = await readStudioCache();
+      if (cached) {
+        applyTierData(cached, 2);
+      }
+    };
+
+    const hydrateFromStaticSnapshot = async () => {
+      const timeoutId = window.setTimeout(
+        () => snapshotController.abort(),
+        SNAPSHOT_FETCH_TIMEOUT_MS
+      );
+      try {
+        const res = await fetch(STATIC_SNAPSHOT_URL, {
+          signal: snapshotController.signal,
+          cache: 'no-cache',
+        });
+        if (!res.ok) return;
+        const rawSnapshot = (await res.json()) as unknown;
+        if (isValidLiveStudioData(rawSnapshot) && rawSnapshot.portfolio.length > 0) {
+          const cleanSnapshot = sanitizeStudioData(rawSnapshot);
+          const wasEmpty = hydrationRankRef.current === 0;
+          applyTierData(cleanSnapshot, 1);
+          if (wasEmpty) {
+            void writeStudioCache(cleanSnapshot);
+          }
+        }
+      } catch {
+        void 0;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    };
+
+    void hydrateFromIndexedDB();
+    void hydrateFromStaticSnapshot();
+    void loadData({ force: true });
+
+    return () => {
+      cancelled = true;
+      snapshotController.abort();
+    };
   }, [loadData]);
 
   useEffect(() => {
@@ -378,23 +395,25 @@ export const App: React.FC = () => {
       const targetUrl = getActiveAppsScriptUrl();
       if (!targetUrl) return;
 
-      const visitorHash = await getUniqueVisitorIpHash();
-      if (cancelled || !visitorHash) return;
+      const { token, shouldReport } = getAnonymousVisitorPing();
+      if (cancelled || !token || !shouldReport) return;
 
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 15000);
       try {
         const visitUrl = new URL(targetUrl);
         visitUrl.searchParams.set('action', 'visit');
-        visitUrl.searchParams.set('visitor', visitorHash);
+        visitUrl.searchParams.set('visitor', token);
         visitUrl.searchParams.set('_ts', String(Date.now()));
 
         const res = await fetch(visitUrl.toString(), {
           signal: controller.signal,
           cache: 'no-store',
+          referrerPolicy: 'no-referrer',
         });
 
         if (!res.ok || cancelled) return;
+        markAnonymousVisitReported();
         const payload = (await res.json()) as { visitorCount?: unknown };
         if (
           typeof payload?.visitorCount === 'number' &&
@@ -403,18 +422,7 @@ export const App: React.FC = () => {
         ) {
           const liveCount = payload.visitorCount;
           setVisitorCount((prev) => (prev === null ? liveCount : Math.max(prev, liveCount)));
-          try {
-            const localRaw = localStorage.getItem(LIVE_PERSISTENT_CACHE_KEY);
-            if (localRaw) {
-              const parsed = JSON.parse(localRaw) as StudioData;
-              parsed.visitorCount = liveCount;
-              const serialized = JSON.stringify(parsed);
-              localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
-              sessionStorage.setItem(CACHE_KEY, serialized);
-            }
-          } catch {
-            void 0;
-          }
+          void updateCachedVisitorCount(liveCount);
         }
       } catch {
         void 0;
@@ -833,6 +841,7 @@ export const App: React.FC = () => {
       <ContactModal
         isOpen={isContactOpen}
         onClose={handleCloseContact}
+        onShowToast={showToast}
       />
 
       <Toast
@@ -841,7 +850,7 @@ export const App: React.FC = () => {
         isWarning={toast.isWarning}
       />
 
-      <Footer onSelectTab={handleSelectTab} />
+      <Footer onSelectTab={handleSelectTab} onOpenContact={handleOpenContact} />
     </div>
   );
 };

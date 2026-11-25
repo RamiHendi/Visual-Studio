@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CVElement, CVSection, CVRole, NavigationMetadata } from '../types';
+import { sanitizeHttpsUrl } from '../utils/urlSecurity';
+import {
+  decodeDirectEmail,
+  decodeDirectWhatsAppDisplay,
+  maskEmailToken,
+  maskPhoneToken,
+} from '../utils/contactPrivacy';
 
 interface InteractiveCVProps {
   elements: CVElement[];
@@ -185,6 +192,8 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
     null
   );
   const [printDate, setPrintDate] = useState<string>(() => formatPrintDate(new Date()));
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
+  const [revealedTokens, setRevealedTokens] = useState<Record<number, boolean>>({});
   const sectionNodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const roleNodesRef = useRef<Map<string, { section: string; role: string; node: HTMLDivElement }>>(
     new Map()
@@ -193,10 +202,16 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
   useEffect(() => {
     const handleBeforePrint = () => {
       setPrintDate(formatPrintDate(new Date()));
+      setIsPrinting(true);
+    };
+    const handleAfterPrint = () => {
+      setIsPrinting(false);
     };
     window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
     return () => {
       window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
     };
   }, []);
 
@@ -238,7 +253,12 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
           i++;
           continue;
         }
-        if (cleanText.includes('@') || /\+?\d[\d\s\-()]{7,}/.test(cleanText)) {
+        if (
+          cleanText.includes('@') ||
+          cleanText.includes('__PROTECTED_EMAIL__') ||
+          cleanText.includes('__PROTECTED_PHONE__') ||
+          /\+?\d[\d\s\-()]{7,}/.test(cleanText)
+        ) {
           extractedContacts = cleanText
             .split('|')
             .map((token) => normalizeWhitespace(token))
@@ -425,10 +445,11 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
     });
   }, [activeSectionTitle, activeRole, sections, onNavigationChange]);
 
+  const safeCvPdfUrl = sanitizeHttpsUrl(cvPdfUrl);
   const isDemoPdf =
-    !cvPdfUrl ||
-    cvPdfUrl.includes('DEMO_DOC_ID') ||
-    cvPdfUrl.includes('PASTE_YOUR_');
+    !safeCvPdfUrl ||
+    safeCvPdfUrl.includes('DEMO_DOC_ID') ||
+    safeCvPdfUrl.includes('PASTE_YOUR_');
 
   const handleExportPdf = (e: React.MouseEvent) => {
     if (isDemoPdf) {
@@ -461,24 +482,69 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
               {contactTokens
                 .filter((token) => !/^(linkedin|facebook)\b/i.test(token))
                 .map((token, idx, arr) => {
-                  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(token);
-                  const isPhone = /^\+?[\d\s\-()]{8,}$/.test(token);
+                  const isProtectedEmail = token === '__PROTECTED_EMAIL__';
+                  const isProtectedPhone = token === '__PROTECTED_PHONE__';
+                  const isEmail = isProtectedEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(token);
+                  const isPhone = isProtectedPhone || /^\+?[\d\s\-()]{8,}$/.test(token);
+                  const isVisible = isPrinting || Boolean(revealedTokens[idx]);
+                  const resolvedEmail = isVisible
+                    ? isProtectedEmail
+                      ? decodeDirectEmail()
+                      : token
+                    : '';
+                  const resolvedPhone = isVisible
+                    ? isProtectedPhone
+                      ? decodeDirectWhatsAppDisplay()
+                      : token
+                    : '';
                   return (
                     <React.Fragment key={idx}>
                       {isEmail ? (
-                        <a
-                          href={`mailto:${token}`}
-                          className="text-zinc-300 hover:text-brass transition-colors"
-                        >
-                          {token}
-                        </a>
+                        isVisible ? (
+                          <a
+                            href={`mailto:${resolvedEmail}`}
+                            className="text-zinc-300 hover:text-brass transition-colors"
+                          >
+                            {resolvedEmail}
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRevealedTokens((prev) => ({ ...prev, [idx]: true }))
+                            }
+                            title="Click to reveal email"
+                            className="inline-flex items-center gap-1.5 font-mono text-xs text-brass/90 hover:text-brass transition-colors cursor-pointer"
+                          >
+                            <i aria-hidden="true" className="fa-regular fa-eye text-[10px]"></i>
+                            <span>
+                              {isProtectedEmail ? 'Reveal email' : maskEmailToken(token)}
+                            </span>
+                          </button>
+                        )
                       ) : isPhone ? (
-                        <a
-                          href={`tel:${token.replace(/[^\d+]/g, '')}`}
-                          className="font-mono text-xs text-zinc-300 hover:text-brass transition-colors tabular-nums"
-                        >
-                          {token}
-                        </a>
+                        isVisible ? (
+                          <a
+                            href={`tel:${resolvedPhone.replace(/[^\d+]/g, '')}`}
+                            className="font-mono text-xs text-zinc-300 hover:text-brass transition-colors tabular-nums"
+                          >
+                            {resolvedPhone}
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRevealedTokens((prev) => ({ ...prev, [idx]: true }))
+                            }
+                            title="Click to reveal phone number"
+                            className="inline-flex items-center gap-1.5 font-mono text-xs text-brass/90 hover:text-brass transition-colors tabular-nums cursor-pointer"
+                          >
+                            <i aria-hidden="true" className="fa-regular fa-eye text-[10px]"></i>
+                            <span>
+                              {isProtectedPhone ? 'Reveal phone' : maskPhoneToken(token)}
+                            </span>
+                          </button>
+                        )
                       ) : (
                         <span>{token}</span>
                       )}
@@ -509,7 +575,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
           </button>
 
           <a
-            href={isDemoPdf ? '#cv-pdf' : cvPdfUrl}
+            href={isDemoPdf ? '#cv-pdf' : safeCvPdfUrl}
             target={isDemoPdf ? '_self' : '_blank'}
             rel="noopener noreferrer"
             download={!isDemoPdf}

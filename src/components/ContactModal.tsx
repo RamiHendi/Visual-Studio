@@ -1,39 +1,63 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  decodeDirectEmail,
+  decodeDirectEmailHref,
+  decodeDirectWhatsAppDisplay,
+  decodeDirectWhatsAppHref,
+} from '../utils/contactPrivacy';
 
 interface ContactModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onShowToast?: (message: string, isWarning?: boolean) => void;
 }
 
-interface ContactChannel {
+interface SocialChannel {
   id: string;
   name: string;
   handle: string;
   description: string;
   href: string;
   iconClass: string;
-  external: boolean;
 }
 
-export const CONTACT_CHANNELS: ContactChannel[] = [
+interface ProtectedChannel {
+  id: 'email' | 'whatsapp';
+  name: string;
+  maskedPrompt: string;
+  description: string;
+  iconClass: string;
+  external: boolean;
+  openLabel: string;
+}
+
+interface RevealedDetail {
+  display: string;
+  href: string;
+}
+
+const PROTECTED_CHANNELS: ProtectedChannel[] = [
   {
     id: 'email',
     name: 'Email',
-    handle: 'rhhendy@gmail.com',
+    maskedPrompt: 'Click to reveal email address',
     description: 'Project inquiries & direct correspondence',
-    href: 'mailto:rhhendy@gmail.com',
     iconClass: 'fa-solid fa-envelope',
     external: false,
+    openLabel: 'Compose',
   },
   {
     id: 'whatsapp',
     name: 'WhatsApp',
-    handle: '+20 100 618 3769',
+    maskedPrompt: 'Click to reveal WhatsApp number',
     description: 'Direct chat & quick project discussions',
-    href: 'https://wa.me/201006183769',
     iconClass: 'fa-brands fa-whatsapp',
     external: true,
+    openLabel: 'Open Chat',
   },
+];
+
+const SOCIAL_CHANNELS: SocialChannel[] = [
   {
     id: 'linkedin',
     name: 'LinkedIn',
@@ -41,7 +65,6 @@ export const CONTACT_CHANNELS: ContactChannel[] = [
     description: 'Professional experience & network',
     href: 'https://www.linkedin.com/in/ramihendi/',
     iconClass: 'fa-brands fa-linkedin-in',
-    external: true,
   },
   {
     id: 'facebook',
@@ -50,7 +73,6 @@ export const CONTACT_CHANNELS: ContactChannel[] = [
     description: 'Artworks & studio updates',
     href: 'https://www.facebook.com/ramihendi.artworks',
     iconClass: 'fa-brands fa-facebook-f',
-    external: true,
   },
   {
     id: 'behance',
@@ -59,13 +81,50 @@ export const CONTACT_CHANNELS: ContactChannel[] = [
     description: 'Visual case studies & selected works',
     href: 'https://www.behance.net/ramihendi',
     iconClass: 'fa-brands fa-behance',
-    external: true,
   },
 ];
 
-export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) => {
+async function copyContactValue(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    void 0;
+  }
+
+  try {
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    document.body.removeChild(area);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+export const ContactModal: React.FC<ContactModalProps> = ({
+  isOpen,
+  onClose,
+  onShowToast,
+}) => {
+  const [revealed, setRevealed] = useState<Partial<Record<'email' | 'whatsapp', RevealedDetail>>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copiedTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setRevealed({});
+      setCopiedId(null);
+      return;
+    }
 
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -83,7 +142,45 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
     };
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
   if (!isOpen) return null;
+
+  const handleRevealChannel = (id: 'email' | 'whatsapp') => {
+    setRevealed((prev) => {
+      if (prev[id]) return prev;
+      const detail: RevealedDetail =
+        id === 'email'
+          ? { display: decodeDirectEmail(), href: decodeDirectEmailHref() }
+          : { display: decodeDirectWhatsAppDisplay(), href: decodeDirectWhatsAppHref() };
+      return { ...prev, [id]: detail };
+    });
+  };
+
+  const handleCopyDetail = async (id: 'email' | 'whatsapp', value: string) => {
+    const ok = await copyContactValue(value);
+    if (ok) {
+      setCopiedId(id);
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+      copiedTimerRef.current = window.setTimeout(() => {
+        setCopiedId(null);
+        copiedTimerRef.current = null;
+      }, 2000);
+      onShowToast?.(
+        id === 'email' ? 'Email copied to clipboard!' : 'WhatsApp number copied to clipboard!'
+      );
+    } else {
+      onShowToast?.('Could not copy to clipboard.', true);
+    }
+  };
 
   return (
     <div
@@ -109,7 +206,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
               Get in Touch
             </h2>
             <p className="text-xs sm:text-sm text-zinc-400 text-justify">
-              Select a channel to reach out directly or explore more of my work.
+              Select a channel to reveal direct contact details or explore more of my work.
             </p>
           </div>
 
@@ -125,12 +222,111 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
         </div>
 
         <div className="divide-y divide-white/[0.08]">
-          {CONTACT_CHANNELS.map((channel) => (
+          {PROTECTED_CHANNELS.map((channel) => {
+            const detail = revealed[channel.id];
+            if (!detail) {
+              return (
+                <button
+                  key={channel.id}
+                  type="button"
+                  onClick={() => handleRevealChannel(channel.id)}
+                  className="w-full text-left group flex items-center justify-between gap-4 px-6 py-4 bg-obsidian hover:bg-charcoal transition-colors duration-150 focus-visible:outline-none focus-visible:bg-charcoal cursor-pointer"
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-10 h-10 rounded-sm bg-charcoal group-hover:bg-brass/15 border border-white/[0.09] group-hover:border-brass/50 text-zinc-200 group-hover:text-brass flex items-center justify-center shrink-0 transition-colors duration-150">
+                      <i aria-hidden="true" className={`${channel.iconClass} text-base`}></i>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-2.5 flex-wrap">
+                        <span className="font-display text-sm sm:text-base font-medium text-zinc-100 group-hover:text-brass transition-colors duration-150">
+                          {channel.name}
+                        </span>
+                        <span className="font-mono text-[11px] text-brass/85 truncate">
+                          {channel.maskedPrompt}
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-0.5 truncate">
+                        {channel.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span
+                    aria-hidden="true"
+                    className="text-zinc-500 group-hover:text-brass transition-colors duration-150 shrink-0 text-xs"
+                  >
+                    <i className="fa-regular fa-eye"></i>
+                  </span>
+                </button>
+              );
+            }
+
+            const isCopied = copiedId === channel.id;
+            return (
+              <div
+                key={channel.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 bg-charcoal/50"
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-10 h-10 rounded-sm bg-brass/15 border border-brass/50 text-brass flex items-center justify-center shrink-0">
+                    <i aria-hidden="true" className={`${channel.iconClass} text-base`}></i>
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="font-display text-sm font-medium text-zinc-100">
+                      {channel.name}
+                    </div>
+                    <div className="font-mono text-xs text-brass mt-0.5 truncate tabular-nums select-all">
+                      {detail.display}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 pl-14 sm:pl-0">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyDetail(channel.id, detail.display)}
+                    className={`px-3 py-1.5 rounded-sm border text-xs font-medium inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer ${
+                      isCopied
+                        ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300'
+                        : 'bg-obsidian hover:bg-panel border-white/15 text-zinc-200 hover:border-white/30'
+                    }`}
+                  >
+                    <i
+                      aria-hidden="true"
+                      className={`fa-solid ${isCopied ? 'fa-check' : 'fa-copy'} text-[11px]`}
+                    ></i>
+                    <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+
+                  <a
+                    href={detail.href}
+                    target={channel.external ? '_blank' : undefined}
+                    rel={channel.external ? 'noopener noreferrer' : undefined}
+                    className="px-3 py-1.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150"
+                  >
+                    <span>{channel.openLabel}</span>
+                    <i
+                      aria-hidden="true"
+                      className={`${
+                        channel.external
+                          ? 'fa-solid fa-arrow-up-right-from-square'
+                          : 'fa-solid fa-arrow-right'
+                      } text-[10px]`}
+                    ></i>
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+
+          {SOCIAL_CHANNELS.map((channel) => (
             <a
               key={channel.id}
               href={channel.href}
-              target={channel.external ? '_blank' : undefined}
-              rel={channel.external ? 'noopener noreferrer' : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
               className="group flex items-center justify-between gap-4 px-6 py-4 bg-obsidian hover:bg-charcoal transition-colors duration-150 focus-visible:outline-none focus-visible:bg-charcoal"
             >
               <div className="flex items-center gap-4 min-w-0">
@@ -157,13 +353,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) =
                 aria-hidden="true"
                 className="text-zinc-500 group-hover:text-brass transform group-hover:translate-x-0.5 transition-all duration-150 shrink-0 text-xs"
               >
-                <i
-                  className={
-                    channel.external
-                      ? 'fa-solid fa-arrow-up-right-from-square'
-                      : 'fa-solid fa-arrow-right'
-                  }
-                ></i>
+                <i className="fa-solid fa-arrow-up-right-from-square"></i>
               </span>
             </a>
           ))}

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PortfolioItem } from '../types';
+import { sanitizeMediaImageUrl, sanitizeVideoEmbedUrl } from '../utils/urlSecurity';
 
 type SlideDirection = 'next' | 'prev' | 'fade';
 
@@ -541,7 +542,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     const slideCategory = (slide.item.category || 'Selected Work').replace(/_/g, ' ');
 
     if (slideIsVideo) {
-      const embedUrl = slide.src.trim();
+      const embedUrl = sanitizeVideoEmbedUrl(slide.src);
       return (
         <div className="w-full max-w-5xl aspect-video rounded-sm overflow-hidden border border-white/10 bg-black flex items-center justify-center">
           {embedUrl ? (
@@ -553,6 +554,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   : `${slideCategory} video`
               }
               className="w-full h-full"
+              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+              referrerPolicy="no-referrer"
               allow="autoplay; fullscreen; picture-in-picture"
               allowFullScreen
             ></iframe>
@@ -565,7 +568,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       );
     }
 
-    if (!slide.src) {
+    const safeImageSrc = sanitizeMediaImageUrl(slide.src);
+    if (!safeImageSrc) {
       return (
         <div className="px-8 py-12 bg-charcoal border border-white/10 rounded-sm text-center">
           <span className="font-mono text-xs text-zinc-500">
@@ -598,7 +602,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         }`}
       >
         <img
-          src={slide.src}
+          src={safeImageSrc}
           alt={
             slide.projectTitle
               ? `${slide.projectTitle} — ${slideCategory} by Rami Hendi`
@@ -612,7 +616,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           onError={(e) => {
             const imgEl = e.currentTarget;
             if (imgEl.dataset.fallbackTried === '1') return;
-            const fallback = (slide.item.thumbUrl || '').trim();
+            const fallback = sanitizeMediaImageUrl(slide.item.thumbUrl);
             if (fallback && imgEl.src !== fallback) {
               imgEl.dataset.fallbackTried = '1';
               imgEl.src = fallback;

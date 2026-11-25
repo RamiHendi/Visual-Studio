@@ -1,89 +1,73 @@
-const VISITOR_HASH_SESSION_KEY = 'rami_hendi_visual_studio_visitor_hash_v1';
+const VISITOR_ID_STORAGE_KEY = 'rami_hendi_visual_studio_visitor_id_v2';
+const VISITOR_REPORTED_AT_KEY = 'rami_hendi_visual_studio_visit_reported_v2';
+const LEGACY_VISITOR_SESSION_KEY = 'rami_hendi_visual_studio_visitor_hash_v1';
+const VISIT_REPORT_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
-const PUBLIC_IP_ENDPOINTS = [
-  'https://api.ipify.org?format=json',
-  'https://api64.ipify.org?format=json',
-  'https://api.seeip.org/jsonip',
-];
-
-async function fetchPublicIpWithTimeout(url: string, timeoutMs = 4000): Promise<string | null> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+function generateRandomVisitorToken(): string {
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { ip?: unknown };
-    if (typeof data?.ip === 'string' && data.ip.trim().length > 0) {
-      return data.ip.trim();
-    }
-    return null;
-  } catch {
-    return null;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
-async function resolvePublicIp(): Promise<string | null> {
-  for (const endpoint of PUBLIC_IP_ENDPOINTS) {
-    const ip = await fetchPublicIpWithTimeout(endpoint);
-    if (ip) return ip;
-  }
-  return null;
-}
-
-function fallbackHashHex(input: string): string {
-  let h1 = 0x811c9dc5;
-  let h2 = 0x9e3779b9;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input.charCodeAt(i);
-    h1 ^= ch;
-    h1 = Math.imul(h1, 0x01000193);
-    h2 ^= ch + i;
-    h2 = Math.imul(h2, 0x01000193);
-  }
-  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
-}
-
-async function hashPublicIp(ip: string): Promise<string> {
-  const normalized = `rhvs-ip::${ip.toLowerCase().trim()}`;
-  try {
-    if (typeof crypto !== 'undefined' && crypto.subtle) {
-      const encoded = new TextEncoder().encode(normalized);
-      const digest = await crypto.subtle.digest('SHA-256', encoded);
-      const bytes = Array.from(new Uint8Array(digest));
-      return bytes
-        .slice(0, 8)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-    }
-  } catch {
-    return fallbackHashHex(normalized);
-  }
-  return fallbackHashHex(normalized);
-}
-
-export async function getUniqueVisitorIpHash(): Promise<string | null> {
-  try {
-    const cached = sessionStorage.getItem(VISITOR_HASH_SESSION_KEY);
-    if (cached && /^[a-f0-9]{16}$/i.test(cached)) {
-      return cached;
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(12);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
     }
   } catch {
     void 0;
   }
 
-  const publicIp = await resolvePublicIp();
-  if (!publicIp) return null;
+  let token = '';
+  for (let i = 0; i < 24; i++) {
+    token += Math.floor(Math.random() * 16).toString(16);
+  }
+  return token;
+}
 
-  const hash = await hashPublicIp(publicIp);
+function getOrCreateVisitorToken(): string {
   try {
-    sessionStorage.setItem(VISITOR_HASH_SESSION_KEY, hash);
+    sessionStorage.removeItem(LEGACY_VISITOR_SESSION_KEY);
   } catch {
     void 0;
   }
-  return hash;
+
+  try {
+    const existing = localStorage.getItem(VISITOR_ID_STORAGE_KEY);
+    if (existing && /^[a-f0-9]{16,32}$/i.test(existing)) {
+      return existing.toLowerCase();
+    }
+  } catch {
+    void 0;
+  }
+
+  const created = generateRandomVisitorToken();
+  try {
+    localStorage.setItem(VISITOR_ID_STORAGE_KEY, created);
+  } catch {
+    void 0;
+  }
+  return created;
+}
+
+export function getAnonymousVisitorPing(): { token: string; shouldReport: boolean } {
+  const token = getOrCreateVisitorToken();
+
+  try {
+    const lastRaw = localStorage.getItem(VISITOR_REPORTED_AT_KEY);
+    if (lastRaw) {
+      const lastTs = Number(lastRaw);
+      if (Number.isFinite(lastTs) && Date.now() - lastTs < VISIT_REPORT_COOLDOWN_MS) {
+        return { token, shouldReport: false };
+      }
+    }
+  } catch {
+    void 0;
+  }
+
+  return { token, shouldReport: true };
+}
+
+export function markAnonymousVisitReported(): void {
+  try {
+    localStorage.setItem(VISITOR_REPORTED_AT_KEY, String(Date.now()));
+  } catch {
+    void 0;
+  }
 }

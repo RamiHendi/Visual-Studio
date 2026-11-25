@@ -1,5 +1,6 @@
 import React from 'react';
 import { MainTab } from '../types';
+import { sanitizeHttpsUrl } from '../utils/urlSecurity';
 
 interface HeaderProps {
   currentTab: MainTab;
@@ -10,10 +11,11 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = React.memo(
   ({ currentTab, onSelectTab, cvPdfUrl, onOpenContact }) => {
+    const safeCvPdfUrl = sanitizeHttpsUrl(cvPdfUrl);
     const isDemoPdf =
-      !cvPdfUrl ||
-      cvPdfUrl.includes('DEMO_DOC_ID') ||
-      cvPdfUrl.includes('PASTE_YOUR_');
+      !safeCvPdfUrl ||
+      safeCvPdfUrl.includes('DEMO_DOC_ID') ||
+      safeCvPdfUrl.includes('PASTE_YOUR_');
 
     const handlePdfClick = (e: React.MouseEvent) => {
       if (isDemoPdf) {
@@ -75,7 +77,7 @@ export const Header: React.FC<HeaderProps> = React.memo(
             </button>
 
             <a
-              href={isDemoPdf ? '#cv' : cvPdfUrl}
+              href={isDemoPdf ? '#cv' : safeCvPdfUrl}
               target={isDemoPdf ? '_self' : '_blank'}
               rel="noopener noreferrer"
               download={!isDemoPdf}

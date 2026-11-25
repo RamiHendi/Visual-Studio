@@ -3,9 +3,6 @@ import { StudioData } from '../types';
 export const DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbxVzW2yRCNDbPAlNW95B0MTbD2mD6ZXaGGBnMyVIPyj1n9Jgf_ho7RLWI_H5Badu4g/exec';
 
-export const CACHE_KEY = 'rami_hendi_visual_studio_cms_cache_v2';
-export const SAVED_URL_KEY = 'rami_hendi_custom_apps_script_url';
-
 export const DEMO_STUDIO_DATA: StudioData = {
   studioName: "Rami Hendi's Visual Studio",
   updatedAt: new Date().toISOString(),
