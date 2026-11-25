@@ -27,6 +27,22 @@ import { Footer } from './components/Footer';
 import { AmbientGeometry } from './components/AmbientGeometry';
 
 const LIVE_PERSISTENT_CACHE_KEY = 'rami_hendi_visual_studio_live_cache_v3';
+const LIVE_FETCH_TIMEOUT_MS = 45000;
+const AUTO_REVALIDATE_INTERVAL_MS = 90000;
+const VISIBILITY_REVALIDATE_COOLDOWN_MS = 30000;
+
+const getStudioContentFingerprint = (data: StudioData | null): string => {
+  if (!data) return '';
+  try {
+    return JSON.stringify({
+      cvPdfUrl: data.cvPdfUrl || '',
+      cv: data.cv || [],
+      portfolio: data.portfolio || [],
+    });
+  } catch {
+    return '';
+  }
+};
 
 const isValidLiveStudioData = (data: unknown): data is StudioData => {
   if (!data || typeof data !== 'object') return false;
@@ -125,9 +141,16 @@ export const App: React.FC = () => {
     isWarning: false,
   });
   const toastTimerRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
   const handledDeepLinkRef = useRef<string | null>(null);
   const hasLiveDataRef = useRef<boolean>(Boolean(initialCacheRef.current?.data));
+  const contentFingerprintRef = useRef<string>(
+    getStudioContentFingerprint(initialCacheRef.current?.data ?? null)
+  );
   const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const isFetchingRef = useRef<boolean>(false);
+  const lastSyncTimeRef = useRef<number>(0);
+  const isMountedRef = useRef<boolean>(true);
 
   const [lightbox, setLightbox] = useState<{
     isOpen: boolean;
@@ -157,9 +180,14 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
+      }
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
       }
       if (activeFetchControllerRef.current) {
         activeFetchControllerRef.current.abort();
@@ -179,78 +207,168 @@ export const App: React.FC = () => {
     return DEFAULT_APPS_SCRIPT_URL.trim();
   }, []);
 
-  const loadData = useCallback(async () => {
-    const targetUrl = getActiveAppsScriptUrl();
-    if (!targetUrl) {
-      setIsLoading(false);
-      return;
-    }
+  const loadData = useCallback(
+    async (options?: { force?: boolean; attempt?: number }) => {
+      const force = Boolean(options?.force);
+      const attempt = options?.attempt ?? 0;
+      const targetUrl = getActiveAppsScriptUrl();
+      if (!targetUrl) {
+        setIsLoading(false);
+        return;
+      }
 
-    if (activeFetchControllerRef.current) {
-      activeFetchControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    activeFetchControllerRef.current = controller;
+      if (isFetchingRef.current && !force) {
+        return;
+      }
 
-    if (!hasLiveDataRef.current) {
-      setIsLoading(true);
-    }
-    setLoadError(false);
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
 
-    const timeoutId = window.setTimeout(() => controller.abort(), 12000);
-    try {
-      const response = await fetch(targetUrl, {
-        signal: controller.signal,
-        cache: 'no-store',
-      });
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const liveData = (await response.json()) as StudioData;
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
+      isFetchingRef.current = true;
 
-      if (controller.signal.aborted) return;
+      if (!hasLiveDataRef.current) {
+        setIsLoading(true);
+      }
+      setLoadError(false);
 
-      if (isValidLiveStudioData(liveData)) {
-        if (
-          typeof liveData.visitorCount === 'number' &&
-          Number.isFinite(liveData.visitorCount)
-        ) {
-          setVisitorCount((prev) =>
-            prev === null ? liveData.visitorCount! : Math.max(prev, liveData.visitorCount!)
-          );
-        }
-        const hasNewPortfolioItems = liveData.portfolio.length > 0;
-        if (hasNewPortfolioItems || !hasLiveDataRef.current) {
-          if (hasNewPortfolioItems) {
-            hasLiveDataRef.current = true;
+      let didTimeout = false;
+      const timeoutId = window.setTimeout(() => {
+        didTimeout = true;
+        controller.abort();
+      }, LIVE_FETCH_TIMEOUT_MS);
+
+      try {
+        const requestUrl = new URL(targetUrl);
+        requestUrl.searchParams.set('_ts', String(Date.now()));
+
+        const response = await fetch(requestUrl.toString(), {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const liveData = (await response.json()) as StudioData;
+
+        if (controller.signal.aborted || !isMountedRef.current) return;
+
+        if (isValidLiveStudioData(liveData)) {
+          lastSyncTimeRef.current = Date.now();
+          if (
+            typeof liveData.visitorCount === 'number' &&
+            Number.isFinite(liveData.visitorCount)
+          ) {
+            setVisitorCount((prev) =>
+              prev === null ? liveData.visitorCount! : Math.max(prev, liveData.visitorCount!)
+            );
           }
-          setStudioData(liveData);
-          setLoadError(false);
-          if (hasNewPortfolioItems) {
-            try {
-              const serialized = JSON.stringify(liveData);
-              sessionStorage.setItem(CACHE_KEY, serialized);
-              localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
-            } catch {
-              void 0;
+
+          const hasNewPortfolioItems = liveData.portfolio.length > 0;
+          const nextFingerprint = getStudioContentFingerprint(liveData);
+          const contentChanged = nextFingerprint !== contentFingerprintRef.current;
+
+          if (hasNewPortfolioItems || !hasLiveDataRef.current) {
+            if (hasNewPortfolioItems) {
+              hasLiveDataRef.current = true;
+            }
+            if (contentChanged || !contentFingerprintRef.current) {
+              contentFingerprintRef.current = nextFingerprint;
+              setStudioData(liveData);
+            }
+            setLoadError(false);
+            if (hasNewPortfolioItems) {
+              try {
+                const serialized = JSON.stringify(liveData);
+                sessionStorage.setItem(CACHE_KEY, serialized);
+                localStorage.setItem(LIVE_PERSISTENT_CACHE_KEY, serialized);
+              } catch {
+                void 0;
+              }
             }
           }
         }
+      } catch {
+        const wasReplacedOrUnmounted = controller.signal.aborted && !didTimeout;
+        if (!wasReplacedOrUnmounted && isMountedRef.current) {
+          if (attempt < 1) {
+            retryTimerRef.current = window.setTimeout(() => {
+              retryTimerRef.current = null;
+              if (isMountedRef.current) {
+                loadData({ force: true, attempt: attempt + 1 });
+              }
+            }, 1500);
+          } else if (!hasLiveDataRef.current) {
+            setLoadError(true);
+          }
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+        if (activeFetchControllerRef.current === controller) {
+          activeFetchControllerRef.current = null;
+          isFetchingRef.current = false;
+        }
+        if (isMountedRef.current) {
+          setIsLoading(false);
+        }
       }
-    } catch {
-      if (!controller.signal.aborted && !hasLiveDataRef.current) {
-        setLoadError(true);
-      }
-    } finally {
-      window.clearTimeout(timeoutId);
-      if (activeFetchControllerRef.current === controller) {
-        activeFetchControllerRef.current = null;
-      }
-      setIsLoading(false);
-    }
-  }, [getActiveAppsScriptUrl]);
+    },
+    [getActiveAppsScriptUrl]
+  );
+
+  const handleRetryLoad = useCallback(() => {
+    loadData({ force: true });
+  }, [loadData]);
 
   useEffect(() => {
-    loadData();
+    loadData({ force: true });
+  }, [loadData]);
+
+  useEffect(() => {
+    const triggerBackgroundSync = (ignoreCooldown = false) => {
+      if (document.visibilityState !== 'visible') return;
+      if (isFetchingRef.current) return;
+      const elapsed = Date.now() - lastSyncTimeRef.current;
+      if (!ignoreCooldown && elapsed < VISIBILITY_REVALIDATE_COOLDOWN_MS) return;
+      loadData();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerBackgroundSync(false);
+      }
+    };
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        triggerBackgroundSync(true);
+      }
+    };
+
+    const handleOnline = () => {
+      triggerBackgroundSync(true);
+    };
+
+    const intervalId = window.setInterval(() => {
+      triggerBackgroundSync(false);
+    }, AUTO_REVALIDATE_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [loadData]);
 
   useEffect(() => {
@@ -264,11 +382,12 @@ export const App: React.FC = () => {
       if (cancelled || !visitorHash) return;
 
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
       try {
         const visitUrl = new URL(targetUrl);
         visitUrl.searchParams.set('action', 'visit');
         visitUrl.searchParams.set('visitor', visitorHash);
+        visitUrl.searchParams.set('_ts', String(Date.now()));
 
         const res = await fetch(visitUrl.toString(), {
           signal: controller.signal,
@@ -677,7 +796,7 @@ export const App: React.FC = () => {
             categories={studioData.portfolio || []}
             isLoading={isLoading}
             loadError={loadError}
-            onRetry={loadData}
+            onRetry={handleRetryLoad}
             onOpenLightbox={handleOpenLightbox}
             onShowToast={showToast}
             onNavigationChange={setPortfolioNav}
