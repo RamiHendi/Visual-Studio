@@ -112,9 +112,18 @@ export function sanitizeMediaImageUrl(raw?: string | null): string {
   return sanitizeHttpsUrl(trimmed);
 }
 
+function sanitizeVersionToken(raw?: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 128) return undefined;
+  return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : undefined;
+}
+
 export function sanitizeStudioData(data: StudioData): StudioData {
+  const safeVersion = sanitizeVersionToken(data.version);
   return {
     ...data,
+    version: safeVersion,
     cvPdfUrl: sanitizeHttpsUrl(data.cvPdfUrl),
     cv: Array.isArray(data.cv) ? data.cv : [],
     portfolio: Array.isArray(data.portfolio)

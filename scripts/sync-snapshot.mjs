@@ -99,10 +99,18 @@ function redactCvContactPii(text) {
     .replace(/\+?\d[\d\s\-()]{8,}\d/g, '__PROTECTED_PHONE__');
 }
 
+function sanitizeVersionToken(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 128) return undefined;
+  return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : undefined;
+}
+
 function sanitizePayload(data) {
   return {
     studioName: typeof data.studioName === 'string' ? data.studioName : "Rami Hendi's Visual Studio",
     updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString(),
+    version: sanitizeVersionToken(data.version),
     cvPdfUrl: sanitizeHttpsUrl(data.cvPdfUrl),
     visitorCount:
       typeof data.visitorCount === 'number' && Number.isFinite(data.visitorCount)

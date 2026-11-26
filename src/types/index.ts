@@ -40,6 +40,7 @@ export interface PortfolioCategory {
 export interface StudioData {
   studioName: string;
   updatedAt: string;
+  version?: string;
   cvPdfUrl: string;
   visitorCount?: number;
   cv: CVElement[];

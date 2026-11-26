@@ -36,8 +36,9 @@ import { AmbientGeometry } from './components/AmbientGeometry';
 
 const LIVE_FETCH_TIMEOUT_MS = 45000;
 const SNAPSHOT_FETCH_TIMEOUT_MS = 8000;
-const AUTO_REVALIDATE_INTERVAL_MS = 90000;
-const VISIBILITY_REVALIDATE_COOLDOWN_MS = 30000;
+const VERSION_CHECK_TIMEOUT_MS = 8000;
+const AUTO_REVALIDATE_INTERVAL_MS = 60000;
+const VISIBILITY_REVALIDATE_COOLDOWN_MS = 20000;
 const STATIC_SNAPSHOT_URL = './studio-snapshot.json';
 
 const parseUpdatedAtMs = (updatedAt?: string): number => {
@@ -97,9 +98,11 @@ export const App: React.FC = () => {
   const hasLiveDataRef = useRef<boolean>(false);
   const hydrationRankRef = useRef<number>(0);
   const hydratedUpdatedAtRef = useRef<number>(0);
+  const hydratedVersionRef = useRef<string>('');
   const contentFingerprintRef = useRef<string>('');
   const activeFetchControllerRef = useRef<AbortController | null>(null);
   const isFetchingRef = useRef<boolean>(false);
+  const isCheckingVersionRef = useRef<boolean>(false);
   const lastSyncTimeRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
 
@@ -225,6 +228,9 @@ export const App: React.FC = () => {
               hasLiveDataRef.current = true;
               hydrationRankRef.current = 3;
               hydratedUpdatedAtRef.current = parseUpdatedAtMs(liveData.updatedAt);
+              if (liveData.version) {
+                hydratedVersionRef.current = liveData.version;
+              }
             }
             if (contentChanged || !contentFingerprintRef.current) {
               contentFingerprintRef.current = nextFingerprint;
@@ -265,9 +271,82 @@ export const App: React.FC = () => {
     [getActiveAppsScriptUrl]
   );
 
+  const checkRemoteVersion = useCallback(async (): Promise<string | null> => {
+    const targetUrl = getActiveAppsScriptUrl();
+    if (!targetUrl || isCheckingVersionRef.current) return null;
+
+    isCheckingVersionRef.current = true;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), VERSION_CHECK_TIMEOUT_MS);
+
+    try {
+      const versionUrl = new URL(targetUrl);
+      versionUrl.searchParams.set('action', 'version');
+      versionUrl.searchParams.set('_ts', String(Date.now()));
+
+      const res = await fetch(versionUrl.toString(), {
+        signal: controller.signal,
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer',
+      });
+      if (!res.ok || !isMountedRef.current) return null;
+
+      const payload = (await res.json()) as {
+        version?: unknown;
+        visitorCount?: unknown;
+      };
+
+      if (
+        typeof payload?.visitorCount === 'number' &&
+        Number.isFinite(payload.visitorCount) &&
+        isMountedRef.current
+      ) {
+        const liveCount = payload.visitorCount;
+        setVisitorCount((prev) => (prev === null ? liveCount : Math.max(prev, liveCount)));
+        void updateCachedVisitorCount(liveCount);
+      }
+
+      if (typeof payload?.version === 'string' && payload.version.trim().length > 0) {
+        return payload.version.trim();
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      window.clearTimeout(timeoutId);
+      isCheckingVersionRef.current = false;
+    }
+  }, [getActiveAppsScriptUrl]);
+
+  const revalidateStudioData = useCallback(
+    async (options?: { forceFull?: boolean }) => {
+      if (isFetchingRef.current && !options?.forceFull) return;
+
+      if (
+        options?.forceFull ||
+        !hasLiveDataRef.current ||
+        !hydratedVersionRef.current
+      ) {
+        await loadData({ force: Boolean(options?.forceFull) });
+        return;
+      }
+
+      const remoteVersion = await checkRemoteVersion();
+      if (!isMountedRef.current) return;
+
+      if (remoteVersion && remoteVersion === hydratedVersionRef.current) {
+        lastSyncTimeRef.current = Date.now();
+        return;
+      }
+
+      await loadData({ force: true });
+    },
+    [checkRemoteVersion, loadData]
+  );
+
   const handleRetryLoad = useCallback(() => {
-    loadData({ force: true });
-  }, [loadData]);
+    void revalidateStudioData({ forceFull: true });
+  }, [revalidateStudioData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,6 +365,9 @@ export const App: React.FC = () => {
 
       hydrationRankRef.current = Math.max(hydrationRankRef.current, rank);
       hydratedUpdatedAtRef.current = Math.max(hydratedUpdatedAtRef.current, incomingTs);
+      if (data.version) {
+        hydratedVersionRef.current = data.version;
+      }
       hasLiveDataRef.current = true;
 
       const nextFingerprint = getStudioContentFingerprint(data);
@@ -337,23 +419,35 @@ export const App: React.FC = () => {
       }
     };
 
-    void hydrateFromIndexedDB();
-    void hydrateFromStaticSnapshot();
-    void loadData({ force: true });
+    const startupSync = async () => {
+      const localHydration = Promise.allSettled([
+        hydrateFromIndexedDB(),
+        hydrateFromStaticSnapshot(),
+      ]);
+      await Promise.race([
+        localHydration,
+        new Promise<void>((resolve) => window.setTimeout(resolve, 400)),
+      ]);
+      if (!cancelled && isMountedRef.current) {
+        void revalidateStudioData();
+      }
+    };
+
+    void startupSync();
 
     return () => {
       cancelled = true;
       snapshotController.abort();
     };
-  }, [loadData]);
+  }, [revalidateStudioData]);
 
   useEffect(() => {
     const triggerBackgroundSync = (ignoreCooldown = false) => {
       if (document.visibilityState !== 'visible') return;
-      if (isFetchingRef.current) return;
+      if (isFetchingRef.current || isCheckingVersionRef.current) return;
       const elapsed = Date.now() - lastSyncTimeRef.current;
       if (!ignoreCooldown && elapsed < VISIBILITY_REVALIDATE_COOLDOWN_MS) return;
-      loadData();
+      void revalidateStudioData();
     };
 
     const handleVisibilityChange = () => {
@@ -386,7 +480,7 @@ export const App: React.FC = () => {
       window.removeEventListener('pageshow', handlePageShow);
       window.removeEventListener('online', handleOnline);
     };
-  }, [loadData]);
+  }, [revalidateStudioData]);
 
   useEffect(() => {
     let cancelled = false;
