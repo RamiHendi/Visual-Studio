@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PortfolioItem } from '../types';
-import { sanitizeMediaImageUrl, sanitizeVideoEmbedUrl } from '../utils/urlSecurity';
+import {
+  getYouTubeFallbackThumbUrl,
+  sanitizeMediaImageUrl,
+  sanitizeVideoEmbedUrl,
+} from '../utils/urlSecurity';
 
 type SlideDirection = 'next' | 'prev' | 'fade';
 
@@ -554,9 +558,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   : `${slideCategory} video`
               }
               className="w-full h-full"
-              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
-              referrerPolicy="no-referrer"
-              allow="autoplay; fullscreen; picture-in-picture"
+              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               allowFullScreen
             ></iframe>
           ) : (
@@ -821,6 +825,24 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                       decoding="async"
                       draggable={false}
                       referrerPolicy="no-referrer"
+                      onLoad={(e) => {
+                        const imgEl = e.currentTarget;
+                        if (imgEl.dataset.ytFallback === '1') return;
+                        const fallback = getYouTubeFallbackThumbUrl(imgEl.src);
+                        if (fallback && imgEl.naturalWidth <= 120 && imgEl.naturalHeight <= 90) {
+                          imgEl.dataset.ytFallback = '1';
+                          imgEl.src = fallback;
+                        }
+                      }}
+                      onError={(e) => {
+                        const imgEl = e.currentTarget;
+                        if (imgEl.dataset.ytFallback === '1') return;
+                        const fallback = getYouTubeFallbackThumbUrl(imgEl.src);
+                        if (fallback) {
+                          imgEl.dataset.ytFallback = '1';
+                          imgEl.src = fallback;
+                        }
+                      }}
                       className="w-full h-full object-cover protected-img"
                     />
                   ) : (

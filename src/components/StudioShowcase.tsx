@@ -501,6 +501,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
         >
           {filteredProjects.map((project, idx) => {
             const categoryLabel = (project.category || 'Portfolio').replace(/_/g, ' ');
+            const hasVideo = project.items.some((item) => item.type === 'video');
             const isVideoOnly =
               project.items.length > 0 &&
               project.items.every((item) => item.type === 'video');
@@ -508,8 +509,8 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
             const mediaCountText = formatMediaCountLabel(project.items);
             const showProjectTitle = Boolean(project.isProjectGroup && project.name);
             const cardLabel = showProjectTitle
-              ? `Open project ${project.name} in ${categoryLabel}`
-              : `Open ${categoryLabel} showcase`;
+              ? `Open ${hasVideo ? 'video ' : ''}project ${project.name} in ${categoryLabel}`
+              : `Open ${categoryLabel} ${hasVideo ? 'video ' : ''}showcase`;
 
             return (
               <article
@@ -532,9 +533,15 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                     idx < 3
                   )}
 
-                  {isVideoOnly && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/25 group-hover:bg-black/15 transition-colors duration-200 pointer-events-none">
-                      <div className="w-12 h-12 rounded-full bg-obsidian/80 backdrop-blur-sm border border-white/25 text-zinc-100 group-hover:bg-brass group-hover:text-obsidian group-hover:border-brass flex items-center justify-center transition-all duration-200 transform group-hover:scale-105">
+                  {hasVideo && (
+                    <div
+                      className={`absolute inset-0 z-10 flex items-center justify-center transition-colors duration-200 pointer-events-none ${
+                        isVideoOnly
+                          ? 'bg-black/25 group-hover:bg-black/15'
+                          : 'bg-black/15 group-hover:bg-black/10'
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-full bg-obsidian/80 backdrop-blur-sm border border-white/25 text-zinc-100 group-hover:bg-brass group-hover:text-obsidian group-hover:border-brass flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 shadow-lg">
                         <i aria-hidden="true" className="fa-solid fa-play text-sm ml-0.5"></i>
                       </div>
                     </div>

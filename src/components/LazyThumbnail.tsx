@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getYouTubeFallbackThumbUrl } from '../utils/urlSecurity';
 
 interface LazyThumbnailProps {
   src: string;
@@ -12,11 +13,13 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
   ({ src, alt, eager = false, loading = 'lazy', decoding = 'async' }) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const imgRef = useRef<HTMLImageElement | null>(null);
+    const [activeSrc, setActiveSrc] = useState<string>(() => src.trim());
     const [shouldLoad, setShouldLoad] = useState<boolean>(eager);
     const [isLoaded, setIsLoaded] = useState<boolean>(false);
     const [hasError, setHasError] = useState<boolean>(false);
 
     useEffect(() => {
+      setActiveSrc(src.trim());
       setIsLoaded(false);
       setHasError(false);
       if (eager) {
@@ -54,9 +57,14 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
       if (!shouldLoad) return;
       const img = imgRef.current;
       if (img && img.complete && img.naturalWidth > 0) {
-        setIsLoaded(true);
+        const ytFallback = getYouTubeFallbackThumbUrl(activeSrc);
+        if (ytFallback && img.naturalWidth <= 120 && img.naturalHeight <= 90) {
+          setActiveSrc(ytFallback);
+        } else {
+          setIsLoaded(true);
+        }
       }
-    }, [shouldLoad, src]);
+    }, [shouldLoad, activeSrc]);
 
     return (
       <div
@@ -65,7 +73,7 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
         onDragStart={(e) => e.preventDefault()}
         className="relative w-full aspect-[16/10] overflow-hidden bg-charcoal protected-media"
       >
-        {!isLoaded && !hasError && Boolean(src.trim()) && (
+        {!isLoaded && !hasError && Boolean(activeSrc) && (
           <>
             <div
               aria-hidden="true"
@@ -92,7 +100,7 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
           </>
         )}
 
-        {hasError || !src.trim() ? (
+        {hasError || !activeSrc ? (
           <div className="w-full min-h-[240px] h-full bg-gradient-to-br from-charcoal via-obsidian to-panel flex flex-col items-center justify-center gap-1.5 p-6 text-center">
             <span className="font-display text-xs font-medium text-zinc-300">
               Studio Render
@@ -105,7 +113,7 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
           shouldLoad && (
             <img
               ref={imgRef}
-              src={src.trim()}
+              src={activeSrc}
               alt={alt}
               width={1000}
               height={625}
@@ -116,8 +124,21 @@ export const LazyThumbnail: React.FC<LazyThumbnailProps> = React.memo(
               referrerPolicy="no-referrer"
               onContextMenu={(e) => e.preventDefault()}
               onDragStart={(e) => e.preventDefault()}
-              onLoad={() => setIsLoaded(true)}
+              onLoad={(e) => {
+                const imgEl = e.currentTarget;
+                const ytFallback = getYouTubeFallbackThumbUrl(activeSrc);
+                if (ytFallback && imgEl.naturalWidth <= 120 && imgEl.naturalHeight <= 90) {
+                  setActiveSrc(ytFallback);
+                  return;
+                }
+                setIsLoaded(true);
+              }}
               onError={() => {
+                const ytFallback = getYouTubeFallbackThumbUrl(activeSrc);
+                if (ytFallback && activeSrc !== ytFallback) {
+                  setActiveSrc(ytFallback);
+                  return;
+                }
                 setHasError(true);
                 setIsLoaded(true);
               }}
