@@ -44,7 +44,7 @@ export function isProjectFeatured(project: {
 
 function resolveCoverUrl(items: PortfolioItem[], explicitCover?: string): string {
   if (explicitCover && explicitCover.trim()) return explicitCover.trim();
-  const firstImage = items.find((i) => i.type !== 'video' && i.thumbUrl?.trim());
+  const firstImage = items.find((i) => i.type === 'image' && i.thumbUrl?.trim());
   if (firstImage) return firstImage.thumbUrl.trim();
   const firstWithThumb = items.find((i) => i.thumbUrl?.trim());
   return firstWithThumb?.thumbUrl?.trim() || '';

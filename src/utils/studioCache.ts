@@ -196,7 +196,7 @@ export async function updateCachedVisitorCount(visitorCount: number): Promise<vo
           const updated: StudioCacheRecord = {
             data: {
               ...existing.data,
-              visitorCount: Math.max(existing.data.visitorCount ?? 0, visitorCount),
+              visitorCount,
             },
             cachedAt: existing.cachedAt,
           };

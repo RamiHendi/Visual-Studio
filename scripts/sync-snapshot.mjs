@@ -107,14 +107,16 @@ function sanitizeVersionToken(raw) {
 }
 
 function compactItem(item) {
+  const type = item?.type === 'video' ? 'video' : 'image';
   const thumbUrl = sanitizeMediaImageUrl(item?.thumbUrl);
   const fullUrl = item?.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : '';
   const embedUrl = item?.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : '';
   const description = typeof item?.description === 'string' ? item.description.trim() : '';
+
   const out = {
     id: item?.id || '',
     title: item?.title || '',
-    type: item?.type === 'video' ? 'video' : 'image',
+    type,
     thumbUrl,
   };
   if (description) out.description = description;
@@ -127,9 +129,14 @@ function compactItem(item) {
 }
 
 function compactProject(proj) {
-  const items = Array.isArray(proj?.items) ? proj.items.map(compactItem) : [];
+  const items = Array.isArray(proj?.items)
+    ? proj.items.map((item) => compactItem(item))
+    : [];
   const coverUrl = sanitizeMediaImageUrl(proj?.coverUrl);
-  const firstThumb = items.find((i) => i.type !== 'video' && i.thumbUrl)?.thumbUrl || items[0]?.thumbUrl || '';
+  const firstThumb =
+    items.find((i) => i.type === 'image' && i.thumbUrl)?.thumbUrl ||
+    items.find((i) => i.thumbUrl)?.thumbUrl ||
+    '';
   const description = typeof proj?.description === 'string' ? proj.description.trim() : '';
   const out = {
     id: proj?.id || '',
@@ -161,10 +168,10 @@ function sanitizePayload(data) {
         category: cat.category,
       };
       if (Array.isArray(cat.projects) && cat.projects.length > 0) {
-        entry.projects = cat.projects.map(compactProject);
+        entry.projects = cat.projects.map((proj) => compactProject(proj));
       }
       if (Array.isArray(cat.items) && cat.items.length > 0) {
-        entry.items = cat.items.map(compactItem);
+        entry.items = cat.items.map((item) => compactItem(item));
       }
       return entry;
     }),

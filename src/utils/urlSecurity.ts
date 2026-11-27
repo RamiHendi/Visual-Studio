@@ -119,6 +119,34 @@ function sanitizeVersionToken(raw?: unknown): string | undefined {
   return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : undefined;
 }
 
+function sanitizePortfolioItem<
+  T extends {
+    type?: unknown;
+    description?: string;
+    featured?: boolean;
+    thumbUrl?: string;
+    fullUrl?: string;
+    embedUrl?: string;
+  },
+>(item: T): T & { type: 'image' | 'video'; thumbUrl: string } {
+  const normalizedType: 'image' | 'video' =
+    item.type === 'video' ? 'video' : 'image';
+  const thumbUrl = sanitizeMediaImageUrl(item.thumbUrl);
+  const fullUrl = item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined;
+  const embedUrl = item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined;
+  const desc = (item.description || '').trim();
+
+  return {
+    ...item,
+    type: normalizedType,
+    description: desc || undefined,
+    featured: item.featured === true ? true : undefined,
+    thumbUrl,
+    fullUrl: fullUrl && fullUrl !== thumbUrl ? fullUrl : undefined,
+    embedUrl: embedUrl || undefined,
+  };
+}
+
 export function sanitizeStudioData(data: StudioData): StudioData {
   const safeVersion = sanitizeVersionToken(data.version);
   return {
@@ -130,20 +158,7 @@ export function sanitizeStudioData(data: StudioData): StudioData {
       ? data.portfolio.map((cat) => {
           const items =
             Array.isArray(cat.items) && cat.items.length > 0
-              ? cat.items.map((item) => {
-                  const thumbUrl = sanitizeMediaImageUrl(item.thumbUrl);
-                  const fullUrl = item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined;
-                  const embedUrl = item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined;
-                  const desc = (item.description || '').trim();
-                  return {
-                    ...item,
-                    description: desc || undefined,
-                    featured: item.featured === true ? true : undefined,
-                    thumbUrl,
-                    fullUrl: fullUrl && fullUrl !== thumbUrl ? fullUrl : undefined,
-                    embedUrl: embedUrl || undefined,
-                  };
-                })
+              ? cat.items.map((item) => sanitizePortfolioItem(item))
               : undefined;
 
           const projects =
@@ -154,24 +169,7 @@ export function sanitizeStudioData(data: StudioData): StudioData {
                   featured: proj.featured === true ? true : undefined,
                   coverUrl: sanitizeMediaImageUrl(proj.coverUrl),
                   items: Array.isArray(proj.items)
-                    ? proj.items.map((item) => {
-                        const thumbUrl = sanitizeMediaImageUrl(item.thumbUrl);
-                        const fullUrl = item.fullUrl
-                          ? sanitizeMediaImageUrl(item.fullUrl)
-                          : undefined;
-                        const embedUrl = item.embedUrl
-                          ? sanitizeVideoEmbedUrl(item.embedUrl)
-                          : undefined;
-                        const desc = (item.description || '').trim();
-                        return {
-                          ...item,
-                          description: desc || undefined,
-                          featured: item.featured === true ? true : undefined,
-                          thumbUrl,
-                          fullUrl: fullUrl && fullUrl !== thumbUrl ? fullUrl : undefined,
-                          embedUrl: embedUrl || undefined,
-                        };
-                      })
+                    ? proj.items.map((item) => sanitizePortfolioItem(item))
                     : [],
                 }))
               : undefined;

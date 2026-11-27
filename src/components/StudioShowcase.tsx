@@ -30,7 +30,7 @@ interface StudioShowcaseProps {
 }
 
 function formatMediaCountLabel(items: PortfolioItem[]): string {
-  const imageCount = items.filter((i) => i.type !== 'video').length;
+  const imageCount = items.filter((i) => i.type === 'image').length;
   const videoCount = items.filter((i) => i.type === 'video').length;
 
   if (imageCount > 0 && videoCount > 0) {

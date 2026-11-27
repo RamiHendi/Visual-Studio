@@ -257,7 +257,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       await Promise.all(
         immediate.map((idx) => {
           const item = items[idx];
-          if (!item || item.type === 'video') return Promise.resolve('');
+          if (!item || item.type !== 'image') return Promise.resolve('');
           const url = (item.fullUrl || item.thumbUrl || '').trim();
           return url ? loadAndDecodeUrl(url) : Promise.resolve('');
         })
@@ -266,7 +266,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       for (let i = 2; i < orderedIndices.length; i++) {
         if (cancelled) return;
         const item = items[orderedIndices[i]];
-        if (!item || item.type === 'video') continue;
+        if (!item || item.type !== 'image') continue;
         const url = (item.fullUrl || item.thumbUrl || '').trim();
         if (url) {
           await loadAndDecodeUrl(url);

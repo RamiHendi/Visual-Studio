@@ -112,6 +112,7 @@ export const App: React.FC = () => {
   const retryTimerRef = useRef<number | null>(null);
   const handledDeepLinkRef = useRef<string | null>(null);
   const hasLiveDataRef = useRef<boolean>(false);
+  const hasLiveVisitorCountRef = useRef<boolean>(false);
   const hydrationRankRef = useRef<number>(0);
   const hydratedUpdatedAtRef = useRef<number>(0);
   const hydratedVersionRef = useRef<string>('');
@@ -230,9 +231,9 @@ export const App: React.FC = () => {
             typeof liveData.visitorCount === 'number' &&
             Number.isFinite(liveData.visitorCount)
           ) {
-            setVisitorCount((prev) =>
-              prev === null ? liveData.visitorCount! : Math.max(prev, liveData.visitorCount!)
-            );
+            hasLiveVisitorCountRef.current = true;
+            setVisitorCount(liveData.visitorCount);
+            void updateCachedVisitorCount(liveData.visitorCount);
           }
 
           const hasNewPortfolioItems = liveData.portfolio.length > 0;
@@ -318,7 +319,8 @@ export const App: React.FC = () => {
         isMountedRef.current
       ) {
         const liveCount = payload.visitorCount;
-        setVisitorCount((prev) => (prev === null ? liveCount : Math.max(prev, liveCount)));
+        hasLiveVisitorCountRef.current = true;
+        setVisitorCount(liveCount);
         void updateCachedVisitorCount(liveCount);
       }
 
@@ -392,10 +394,12 @@ export const App: React.FC = () => {
         setStudioData(data);
       }
 
-      if (typeof data.visitorCount === 'number' && Number.isFinite(data.visitorCount)) {
-        setVisitorCount((prev) =>
-          prev === null ? data.visitorCount! : Math.max(prev, data.visitorCount!)
-        );
+      if (
+        !hasLiveVisitorCountRef.current &&
+        typeof data.visitorCount === 'number' &&
+        Number.isFinite(data.visitorCount)
+      ) {
+        setVisitorCount(data.visitorCount);
       }
       setLoadError(false);
       setIsLoading(false);
@@ -531,7 +535,8 @@ export const App: React.FC = () => {
           !cancelled
         ) {
           const liveCount = payload.visitorCount;
-          setVisitorCount((prev) => (prev === null ? liveCount : Math.max(prev, liveCount)));
+          hasLiveVisitorCountRef.current = true;
+          setVisitorCount(liveCount);
           void updateCachedVisitorCount(liveCount);
         }
       } catch {
