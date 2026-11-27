@@ -71,3 +71,27 @@ export function markAnonymousVisitReported(): void {
     void 0;
   }
 }
+
+const IP_LOOKUP_URL = 'https://api64.ipify.org?format=json';
+const IP_LOOKUP_TIMEOUT_MS = 3500;
+const SAFE_IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
+
+export async function fetchPublicVisitorIp(): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), IP_LOOKUP_TIMEOUT_MS);
+  try {
+    const res = await fetch(IP_LOOKUP_URL, {
+      signal: controller.signal,
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+    });
+    if (!res.ok) return '';
+    const data = (await res.json()) as { ip?: unknown };
+    const candidate = typeof data?.ip === 'string' ? data.ip.trim() : '';
+    return SAFE_IP_RE.test(candidate) ? candidate : '';
+  } catch {
+    return '';
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}

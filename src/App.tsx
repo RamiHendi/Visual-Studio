@@ -21,6 +21,7 @@ import {
 } from './data/demoData';
 import { getAllPortfolioProjects } from './utils/portfolioProjects';
 import {
+  fetchPublicVisitorIp,
   getAnonymousVisitorPing,
   markAnonymousVisitReported,
 } from './utils/visitorTracker';
@@ -512,12 +513,18 @@ export const App: React.FC = () => {
       const { token, shouldReport } = getAnonymousVisitorPing();
       if (cancelled || !token || !shouldReport) return;
 
+      const visitorIp = await fetchPublicVisitorIp();
+      if (cancelled) return;
+
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 15000);
       try {
         const visitUrl = new URL(targetUrl);
         visitUrl.searchParams.set('action', 'visit');
         visitUrl.searchParams.set('visitor', token);
+        if (visitorIp) {
+          visitUrl.searchParams.set('ip', visitorIp);
+        }
         visitUrl.searchParams.set('_ts', String(Date.now()));
 
         const res = await fetch(visitUrl.toString(), {
