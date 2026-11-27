@@ -15,6 +15,7 @@ import {
   sanitizeVideoEmbedUrl,
 } from '../utils/urlSecurity';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { useTouchSwipe } from '../hooks/useTouchSwipe';
 
 type SlideDirection = 'next' | 'prev' | 'fade';
 
@@ -68,6 +69,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const swipeTrackRef = useRef<HTMLDivElement | null>(null);
   const zoomWrapperRef = useRef<HTMLDivElement | null>(null);
 
   useModalFocusTrap(isOpen, dialogRef);
@@ -80,7 +82,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     startY: number;
   } | null>(null);
   const didDragRef = useRef<boolean>(false);
-  const touchSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const displayedSlideRef = useRef<ActiveSlide | null>(null);
   const prevItemsRef = useRef<PortfolioItem[]>(items);
@@ -211,7 +212,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
       panRef.current = { x: 0, y: 0 };
       dragStateRef.current = null;
       didDragRef.current = false;
-      touchSwipeStartRef.current = null;
       pendingDirectionRef.current = 'fade';
     }
   }, [isOpen]);
@@ -399,6 +399,25 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     };
   }, [isOpen, safeIndex, items.length, onClose, onNavigate]);
 
+  const handleSwipeLeft = useCallback(() => {
+    if (items.length <= 1) return;
+    pendingDirectionRef.current = 'next';
+    onNavigate((safeIndex + 1) % items.length);
+  }, [items.length, onNavigate, safeIndex]);
+
+  const handleSwipeRight = useCallback(() => {
+    if (items.length <= 1) return;
+    pendingDirectionRef.current = 'prev';
+    onNavigate((safeIndex - 1 + items.length) % items.length);
+  }, [items.length, onNavigate, safeIndex]);
+
+  const { didSwipeRef, handlers: swipeHandlers } = useTouchSwipe({
+    enabled: isOpen && !isZoomed && items.length > 1,
+    targetRef: swipeTrackRef,
+    onSwipeLeft: handleSwipeLeft,
+    onSwipeRight: handleSwipeRight,
+  });
+
   if (!isOpen || !currentItem) return null;
 
   const isVideo = currentItem.type === 'video';
@@ -412,14 +431,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
-    pendingDirectionRef.current = 'prev';
-    onNavigate((safeIndex - 1 + items.length) % items.length);
+    handleSwipeRight();
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    pendingDirectionRef.current = 'next';
-    onNavigate((safeIndex + 1) % items.length);
+    handleSwipeLeft();
   };
 
   const handleFilmstripSelect = (targetIdx: number) => {
@@ -436,32 +453,6 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const handleNextProjectClick = () => {
     pendingDirectionRef.current = 'fade';
     onNextProject?.();
-  };
-
-  const handleStageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (isZoomed || items.length <= 1 || e.touches.length !== 1) return;
-    touchSwipeStartRef.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-    };
-  };
-
-  const handleStageTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    const start = touchSwipeStartRef.current;
-    touchSwipeStartRef.current = null;
-    if (!start || isZoomed || items.length <= 1 || e.changedTouches.length === 0) return;
-
-    const dx = e.changedTouches[0].clientX - start.x;
-    const dy = e.changedTouches[0].clientY - start.y;
-    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.35) {
-      if (dx < 0) {
-        pendingDirectionRef.current = 'next';
-        onNavigate((safeIndex + 1) % items.length);
-      } else {
-        pendingDirectionRef.current = 'prev';
-        onNavigate((safeIndex - 1 + items.length) % items.length);
-      }
-    }
   };
 
   const getEnterClass = (dir: SlideDirection) =>
@@ -547,7 +538,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   };
 
   const handleImageClick = () => {
-    if (didDragRef.current) {
+    if (didDragRef.current || didSwipeRef.current) {
       didDragRef.current = false;
       return;
     }
@@ -745,12 +736,22 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
         <div
           ref={stageRef}
-          onTouchStart={handleStageTouchStart}
-          onTouchEnd={handleStageTouchEnd}
+          onTouchStart={swipeHandlers.onTouchStart}
+          onTouchMove={swipeHandlers.onTouchMove}
+          onTouchEnd={swipeHandlers.onTouchEnd}
+          onTouchCancel={swipeHandlers.onTouchCancel}
           onContextMenu={blockMediaAction}
           onDragStart={blockMediaAction}
-          className="relative w-full h-full overflow-hidden protected-media"
+          className={`relative w-full h-full overflow-hidden protected-media ${
+            !isZoomed && items.length > 1 ? 'touch-pan-y' : ''
+          }`}
         >
+          <span className="sr-only" aria-live="polite" aria-atomic="true">
+            {`Viewing ${safeIndex + 1} of ${items.length}: ${
+              activeProjectTitle ? `${activeProjectTitle} — ` : ''
+            }${categoryLabel}`}
+          </span>
+
           {exitingSlide && (
             <div
               key={`exit-${exitingSlide.key}`}
@@ -770,7 +771,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 displayedSlide.direction
               )}`}
             >
-              {renderSlideMedia(displayedSlide, true)}
+              <div
+                ref={swipeTrackRef}
+                className="w-full h-full flex items-center justify-center"
+              >
+                {renderSlideMedia(displayedSlide, true)}
+              </div>
             </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -917,6 +923,12 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   <span>Next Project</span>
                   <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
                 </button>
+              </div>
+            )}
+
+            {items.length > 1 && (
+              <div className="lg:hidden text-[11px] font-mono text-zinc-500 shrink-0">
+                Swipe ← / →
               </div>
             )}
 

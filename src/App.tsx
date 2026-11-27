@@ -33,7 +33,6 @@ import {
 } from './utils/studioCache';
 import { sanitizeAppsScriptUrl, sanitizeStudioData } from './utils/urlSecurity';
 import { syncPageSeo } from './utils/seo';
-import { captureRuntimeError } from './utils/sentry';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StudioShowcase } from './components/StudioShowcase';
@@ -264,7 +263,7 @@ export const App: React.FC = () => {
             }
           }
         }
-      } catch (err) {
+      } catch {
         const wasReplacedOrUnmounted = controller.signal.aborted && !didTimeout;
         if (!wasReplacedOrUnmounted && isMountedRef.current) {
           if (attempt < 1) {
@@ -275,15 +274,8 @@ export const App: React.FC = () => {
                 loadData({ force: true, attempt: attempt + 1 });
               }
             }, 1500);
-          } else {
-            captureRuntimeError(err, {
-              source: 'studio-live-fetch',
-              didTimeout,
-              hadCachedData: hasLiveDataRef.current,
-            });
-            if (!hasLiveDataRef.current) {
-              setLoadError(true);
-            }
+          } else if (!hasLiveDataRef.current) {
+            setLoadError(true);
           }
         }
       } finally {

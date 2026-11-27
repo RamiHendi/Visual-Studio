@@ -145,9 +145,6 @@ export default defineConfig({
             if (id.includes('/lucide-react/')) {
               return 'icons-vendor';
             }
-            if (id.includes('/@sentry/')) {
-              return 'sentry-vendor';
-            }
           }
           return undefined;
         },
