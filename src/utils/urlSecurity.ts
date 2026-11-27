@@ -127,31 +127,62 @@ export function sanitizeStudioData(data: StudioData): StudioData {
     cvPdfUrl: sanitizeHttpsUrl(data.cvPdfUrl),
     cv: Array.isArray(data.cv) ? data.cv : [],
     portfolio: Array.isArray(data.portfolio)
-      ? data.portfolio.map((cat) => ({
-          ...cat,
-          items: Array.isArray(cat.items)
-            ? cat.items.map((item) => ({
-                ...item,
-                thumbUrl: sanitizeMediaImageUrl(item.thumbUrl),
-                fullUrl: item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined,
-                embedUrl: item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined,
-              }))
-            : undefined,
-          projects: Array.isArray(cat.projects)
-            ? cat.projects.map((proj) => ({
-                ...proj,
-                coverUrl: sanitizeMediaImageUrl(proj.coverUrl),
-                items: Array.isArray(proj.items)
-                  ? proj.items.map((item) => ({
-                      ...item,
-                      thumbUrl: sanitizeMediaImageUrl(item.thumbUrl),
-                      fullUrl: item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined,
-                      embedUrl: item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined,
-                    }))
-                  : [],
-              }))
-            : undefined,
-        }))
+      ? data.portfolio.map((cat) => {
+          const items =
+            Array.isArray(cat.items) && cat.items.length > 0
+              ? cat.items.map((item) => {
+                  const thumbUrl = sanitizeMediaImageUrl(item.thumbUrl);
+                  const fullUrl = item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined;
+                  const embedUrl = item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined;
+                  const desc = (item.description || '').trim();
+                  return {
+                    ...item,
+                    description: desc || undefined,
+                    featured: item.featured === true ? true : undefined,
+                    thumbUrl,
+                    fullUrl: fullUrl && fullUrl !== thumbUrl ? fullUrl : undefined,
+                    embedUrl: embedUrl || undefined,
+                  };
+                })
+              : undefined;
+
+          const projects =
+            Array.isArray(cat.projects) && cat.projects.length > 0
+              ? cat.projects.map((proj) => ({
+                  ...proj,
+                  description: (proj.description || '').trim() || undefined,
+                  featured: proj.featured === true ? true : undefined,
+                  coverUrl: sanitizeMediaImageUrl(proj.coverUrl),
+                  items: Array.isArray(proj.items)
+                    ? proj.items.map((item) => {
+                        const thumbUrl = sanitizeMediaImageUrl(item.thumbUrl);
+                        const fullUrl = item.fullUrl
+                          ? sanitizeMediaImageUrl(item.fullUrl)
+                          : undefined;
+                        const embedUrl = item.embedUrl
+                          ? sanitizeVideoEmbedUrl(item.embedUrl)
+                          : undefined;
+                        const desc = (item.description || '').trim();
+                        return {
+                          ...item,
+                          description: desc || undefined,
+                          featured: item.featured === true ? true : undefined,
+                          thumbUrl,
+                          fullUrl: fullUrl && fullUrl !== thumbUrl ? fullUrl : undefined,
+                          embedUrl: embedUrl || undefined,
+                        };
+                      })
+                    : [],
+                }))
+              : undefined;
+
+          return {
+            rawOrder: cat.rawOrder,
+            category: cat.category,
+            ...(projects ? { projects } : {}),
+            ...(items ? { items } : {}),
+          };
+        })
       : [],
   };
 }

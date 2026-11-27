@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Check, ChevronDown, Play, Search, Share2, X } from 'lucide-react';
 import {
   PortfolioCategory,
   PortfolioItem,
@@ -7,6 +8,9 @@ import {
 } from '../types';
 import { getCategoryProjects } from '../utils/portfolioProjects';
 import { LazyThumbnail } from './LazyThumbnail';
+
+const INITIAL_VISIBLE_COUNT = 12;
+const LOAD_MORE_BATCH = 12;
 
 interface StudioShowcaseProps {
   categories: PortfolioCategory[];
@@ -64,8 +68,10 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
 }) => {
   const [activeCategory, setActiveCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_VISIBLE_COUNT);
   const [copiedProjectId, setCopiedProjectId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -219,6 +225,37 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
         )
     );
   }, [activeCategoryEntry, searchQuery]);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+  }, [resolvedActiveCategory, searchQuery]);
+
+  const visibleProjects = useMemo(
+    () => filteredProjects.slice(0, visibleCount),
+    [filteredProjects, visibleCount]
+  );
+
+  const remainingProjectsCount = Math.max(0, filteredProjects.length - visibleProjects.length);
+
+  useEffect(() => {
+    if (remainingProjectsCount === 0) return;
+    const node = loadMoreSentinelRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleCount((prev) =>
+            Math.min(filteredProjects.length, prev + LOAD_MORE_BATCH)
+          );
+        }
+      },
+      { rootMargin: '420px 0px', threshold: 0.01 }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [remainingProjectsCount, filteredProjects.length]);
 
   const standaloneFilteredItems = useMemo(() => {
     const items: PortfolioItem[] = [];
@@ -404,7 +441,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
               <span className="font-mono text-[11px] text-brass tabular-nums">
                 {activeCategoryTotal}
               </span>
-              <i aria-hidden="true" className="fa-solid fa-chevron-down text-[10px]"></i>
+              <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />
             </div>
           </div>
         </div>
@@ -445,10 +482,10 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full lg:w-auto">
           <div className="relative flex-1 sm:flex-none sm:w-52 lg:w-56">
-            <i
+            <Search
               aria-hidden="true"
-              className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-[11px]"
-            ></i>
+              className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+            />
             <input
               type="search"
               value={searchQuery}
@@ -464,9 +501,9 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                 type="button"
                 aria-label="Clear search"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 text-xs cursor-pointer p-0.5"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 cursor-pointer p-0.5"
               >
-                <i aria-hidden="true" className="fa-solid fa-xmark"></i>
+                <X aria-hidden="true" className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -495,11 +532,12 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           )}
         </div>
       ) : (
-        <div
-          key={resolvedActiveCategory}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-        >
-          {filteredProjects.map((project, idx) => {
+        <div className="space-y-8">
+          <div
+            key={resolvedActiveCategory}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+          >
+            {visibleProjects.map((project, idx) => {
             const categoryLabel = (project.category || 'Portfolio').replace(/_/g, ' ');
             const hasVideo = project.items.some((item) => item.type === 'video');
             const isVideoOnly =
@@ -542,7 +580,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                       }`}
                     >
                       <div className="w-12 h-12 rounded-full bg-obsidian/80 backdrop-blur-sm border border-white/25 text-zinc-100 group-hover:bg-brass group-hover:text-obsidian group-hover:border-brass flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 shadow-lg">
-                        <i aria-hidden="true" className="fa-solid fa-play text-sm ml-0.5"></i>
+                        <Play aria-hidden="true" className="w-4 h-4 fill-current ml-0.5" />
                       </div>
                     </div>
                   )}
@@ -618,12 +656,11 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
                             : 'bg-obsidian/75 border-white/20 text-zinc-200 hover:text-obsidian hover:bg-brass hover:border-brass'
                         }`}
                       >
-                        <i
-                          aria-hidden="true"
-                          className={`fa-solid ${
-                            copiedProjectId === project.id ? 'fa-check' : 'fa-share-nodes'
-                          } text-xs`}
-                        ></i>
+                        {copiedProjectId === project.id ? (
+                          <Check aria-hidden="true" className="w-3.5 h-3.5" />
+                        ) : (
+                          <Share2 aria-hidden="true" className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -631,6 +668,26 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
               </article>
             );
           })}
+          </div>
+
+          {remainingProjectsCount > 0 && (
+            <div ref={loadMoreSentinelRef} className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setVisibleCount((prev) =>
+                    Math.min(filteredProjects.length, prev + LOAD_MORE_BATCH)
+                  )
+                }
+                className="px-5 py-2.5 rounded-sm bg-charcoal hover:bg-panel border border-white/15 hover:border-brass/60 text-zinc-200 hover:text-brass text-xs font-medium inline-flex items-center gap-2 transition-colors duration-150 cursor-pointer"
+              >
+                <span>Load More {hasExplicitProjectGroups ? 'Projects' : 'Works'}</span>
+                <span className="font-mono text-[11px] text-zinc-400 tabular-nums">
+                  ({remainingProjectsCount} remaining)
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>

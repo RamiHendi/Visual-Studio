@@ -16,17 +16,20 @@ export const Footer: React.FC<FooterProps> = React.memo(({ onSelectTab, onOpenCo
           className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 protected-media"
         >
           <span className="inline-flex items-center gap-2">
-            <img
-              src="./assets/aistudio/Logo_9abd8455.png"
-              alt=""
-              aria-hidden="true"
-              width={24}
-              height={24}
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              className="h-5 sm:h-6 w-auto object-contain shrink-0 protected-img"
-            />
+            <picture className="shrink-0">
+              <source srcSet="./assets/aistudio/logo.webp" type="image/webp" />
+              <img
+                src="./assets/aistudio/Logo_9abd8455.png"
+                alt=""
+                aria-hidden="true"
+                width={24}
+                height={24}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                className="h-5 sm:h-6 w-auto object-contain shrink-0 protected-img"
+              />
+            </picture>
             <span className="font-display font-medium text-zinc-200 tracking-tight">
               Rami Hendi
             </span>

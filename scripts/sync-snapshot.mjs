@@ -106,48 +106,75 @@ function sanitizeVersionToken(raw) {
   return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : undefined;
 }
 
+function compactItem(item) {
+  const thumbUrl = sanitizeMediaImageUrl(item?.thumbUrl);
+  const fullUrl = item?.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : '';
+  const embedUrl = item?.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : '';
+  const description = typeof item?.description === 'string' ? item.description.trim() : '';
+  const out = {
+    id: item?.id || '',
+    title: item?.title || '',
+    type: item?.type === 'video' ? 'video' : 'image',
+    thumbUrl,
+  };
+  if (description) out.description = description;
+  if (item?.featured === true) out.featured = true;
+  if (fullUrl && fullUrl !== thumbUrl) out.fullUrl = fullUrl;
+  if (embedUrl) out.embedUrl = embedUrl;
+  if (item?.projectId) out.projectId = item.projectId;
+  if (item?.projectName) out.projectName = item.projectName;
+  return out;
+}
+
+function compactProject(proj) {
+  const items = Array.isArray(proj?.items) ? proj.items.map(compactItem) : [];
+  const coverUrl = sanitizeMediaImageUrl(proj?.coverUrl);
+  const firstThumb = items.find((i) => i.type !== 'video' && i.thumbUrl)?.thumbUrl || items[0]?.thumbUrl || '';
+  const description = typeof proj?.description === 'string' ? proj.description.trim() : '';
+  const out = {
+    id: proj?.id || '',
+    name: proj?.name || '',
+    items,
+  };
+  if (proj?.rawOrder) out.rawOrder = proj.rawOrder;
+  if (description) out.description = description;
+  if (proj?.featured === true) out.featured = true;
+  if (coverUrl && coverUrl !== firstThumb) out.coverUrl = coverUrl;
+  return out;
+}
+
 function sanitizePayload(data) {
-  return {
+  const clean = {
     studioName: typeof data.studioName === 'string' ? data.studioName : "Rami Hendi's Visual Studio",
     updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString(),
-    version: sanitizeVersionToken(data.version),
     cvPdfUrl: sanitizeHttpsUrl(data.cvPdfUrl),
-    visitorCount:
-      typeof data.visitorCount === 'number' && Number.isFinite(data.visitorCount)
-        ? data.visitorCount
-        : undefined,
     cv: Array.isArray(data.cv)
       ? data.cv.map((el) => ({
-          ...el,
+          kind: el?.kind === 'bullet' ? 'bullet' : 'paragraph',
+          heading: el?.heading || 'NORMAL',
           text: redactCvContactPii(el?.text),
         }))
       : [],
-    portfolio: data.portfolio.map((cat) => ({
-      ...cat,
-      items: Array.isArray(cat.items)
-        ? cat.items.map((item) => ({
-            ...item,
-            thumbUrl: sanitizeMediaImageUrl(item.thumbUrl),
-            fullUrl: item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined,
-            embedUrl: item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined,
-          }))
-        : undefined,
-      projects: Array.isArray(cat.projects)
-        ? cat.projects.map((proj) => ({
-            ...proj,
-            coverUrl: sanitizeMediaImageUrl(proj.coverUrl),
-            items: Array.isArray(proj.items)
-              ? proj.items.map((item) => ({
-                  ...item,
-                  thumbUrl: sanitizeMediaImageUrl(item.thumbUrl),
-                  fullUrl: item.fullUrl ? sanitizeMediaImageUrl(item.fullUrl) : undefined,
-                  embedUrl: item.embedUrl ? sanitizeVideoEmbedUrl(item.embedUrl) : undefined,
-                }))
-              : [],
-          }))
-        : undefined,
-    })),
+    portfolio: data.portfolio.map((cat) => {
+      const entry = {
+        rawOrder: cat.rawOrder || cat.category,
+        category: cat.category,
+      };
+      if (Array.isArray(cat.projects) && cat.projects.length > 0) {
+        entry.projects = cat.projects.map(compactProject);
+      }
+      if (Array.isArray(cat.items) && cat.items.length > 0) {
+        entry.items = cat.items.map(compactItem);
+      }
+      return entry;
+    }),
   };
+  const version = sanitizeVersionToken(data.version);
+  if (version) clean.version = version;
+  if (typeof data.visitorCount === 'number' && Number.isFinite(data.visitorCount)) {
+    clean.visitorCount = data.visitorCount;
+  }
+  return clean;
 }
 
 async function run() {

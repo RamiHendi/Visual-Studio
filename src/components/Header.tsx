@@ -1,6 +1,7 @@
 import React from 'react';
 import { MainTab } from '../types';
 import { sanitizeHttpsUrl } from '../utils/urlSecurity';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   currentTab: MainTab;
@@ -35,16 +36,19 @@ export const Header: React.FC<HeaderProps> = React.memo(
             aria-label="Rami Hendi's Visual Studio — Home"
             className="inline-flex items-center gap-2.5 sm:gap-3 font-display text-base sm:text-lg font-semibold tracking-tight text-zinc-100 hover:text-brass transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer protected-media focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass rounded-sm"
           >
-            <img
-              src="./assets/aistudio/Logo_9abd8455.png"
-              alt=""
-              aria-hidden="true"
-              width={32}
-              height={32}
-              decoding="async"
-              draggable={false}
-              className="h-7 sm:h-8 w-auto object-contain shrink-0 protected-img"
-            />
+            <picture className="shrink-0">
+              <source srcSet="./assets/aistudio/logo.webp" type="image/webp" />
+              <img
+                src="./assets/aistudio/Logo_9abd8455.png"
+                alt=""
+                aria-hidden="true"
+                width={32}
+                height={32}
+                decoding="async"
+                draggable={false}
+                className="h-7 sm:h-8 w-auto object-contain shrink-0 protected-img"
+              />
+            </picture>
             <span>Rami Hendi</span>
           </button>
 
@@ -88,7 +92,8 @@ export const Header: React.FC<HeaderProps> = React.memo(
             </a>
           </nav>
 
-          <div className="flex items-center shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <PWAInstallButton />
             <button
               type="button"
               onClick={onOpenContact}

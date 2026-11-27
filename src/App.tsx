@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   StudioData,
   MainTab,
@@ -27,12 +35,20 @@ import { syncPageSeo } from './utils/seo';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StudioShowcase } from './components/StudioShowcase';
-import { InteractiveCV } from './components/InteractiveCV';
-import { LightboxModal } from './components/LightboxModal';
-import { ContactModal } from './components/ContactModal';
 import { Toast } from './components/Toast';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { Footer } from './components/Footer';
 import { AmbientGeometry } from './components/AmbientGeometry';
+
+const InteractiveCV = lazy(() =>
+  import('./components/InteractiveCV').then((m) => ({ default: m.InteractiveCV }))
+);
+const LightboxModal = lazy(() =>
+  import('./components/LightboxModal').then((m) => ({ default: m.LightboxModal }))
+);
+const ContactModal = lazy(() =>
+  import('./components/ContactModal').then((m) => ({ default: m.ContactModal }))
+);
 
 const LIVE_FETCH_TIMEOUT_MS = 45000;
 const SNAPSHOT_FETCH_TIMEOUT_MS = 8000;
@@ -907,42 +923,62 @@ export const App: React.FC = () => {
         )}
 
         {currentTab === 'cv' && (
-          <InteractiveCV
-            elements={studioData.cv || []}
-            cvPdfUrl={studioData.cvPdfUrl}
-            onNavigationChange={setCvNav}
-          />
+          <Suspense
+            fallback={
+              <div className="space-y-6 pt-2 sm:pt-6" aria-busy="true" aria-label="Loading Curriculum Vitae">
+                <div className="h-10 w-64 bg-charcoal border border-white/[0.06] rounded-sm animate-pulse motion-reduce:animate-none" />
+                <div className="h-4 w-80 bg-charcoal border border-white/[0.05] rounded-sm animate-pulse motion-reduce:animate-none" />
+                <div className="h-40 w-full bg-charcoal/70 border border-white/[0.05] rounded-sm animate-pulse motion-reduce:animate-none" />
+              </div>
+            }
+          >
+            <InteractiveCV
+              elements={studioData.cv || []}
+              cvPdfUrl={studioData.cvPdfUrl}
+              onNavigationChange={setCvNav}
+            />
+          </Suspense>
         )}
       </main>
 
-      <LightboxModal
-        isOpen={lightbox.isOpen}
-        itemIndex={lightbox.itemIndex}
-        items={lightbox.items}
-        projectTitle={lightbox.projectTitle}
-        projectIndex={lightbox.projectIndex >= 0 ? lightbox.projectIndex : undefined}
-        totalProjects={
-          lightbox.projectIndex >= 0 ? lightbox.projectList.length : 0
-        }
-        prevProjectName={prevProject?.isProjectGroup ? prevProject.name : undefined}
-        nextProjectName={nextProject?.isProjectGroup ? nextProject.name : undefined}
-        onPrevProject={() => handleJumpProject(-1)}
-        onNextProject={() => handleJumpProject(1)}
-        onClose={handleCloseLightbox}
-        onNavigate={handleNavigateLightbox}
-      />
+      {lightbox.isOpen && (
+        <Suspense fallback={null}>
+          <LightboxModal
+            isOpen={lightbox.isOpen}
+            itemIndex={lightbox.itemIndex}
+            items={lightbox.items}
+            projectTitle={lightbox.projectTitle}
+            projectIndex={lightbox.projectIndex >= 0 ? lightbox.projectIndex : undefined}
+            totalProjects={
+              lightbox.projectIndex >= 0 ? lightbox.projectList.length : 0
+            }
+            prevProjectName={prevProject?.isProjectGroup ? prevProject.name : undefined}
+            nextProjectName={nextProject?.isProjectGroup ? nextProject.name : undefined}
+            onPrevProject={() => handleJumpProject(-1)}
+            onNextProject={() => handleJumpProject(1)}
+            onClose={handleCloseLightbox}
+            onNavigate={handleNavigateLightbox}
+          />
+        </Suspense>
+      )}
 
-      <ContactModal
-        isOpen={isContactOpen}
-        onClose={handleCloseContact}
-        onShowToast={showToast}
-      />
+      {isContactOpen && (
+        <Suspense fallback={null}>
+          <ContactModal
+            isOpen={isContactOpen}
+            onClose={handleCloseContact}
+            onShowToast={showToast}
+          />
+        </Suspense>
+      )}
 
       <Toast
         show={toast.show}
         message={toast.message}
         isWarning={toast.isWarning}
       />
+
+      <OfflineIndicator />
 
       <Footer onSelectTab={handleSelectTab} onOpenContact={handleOpenContact} />
     </div>

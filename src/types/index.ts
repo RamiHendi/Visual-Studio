@@ -7,7 +7,7 @@ export interface CVElement {
 export interface PortfolioItem {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   type: 'image' | 'video';
   thumbUrl: string;
   fullUrl?: string;

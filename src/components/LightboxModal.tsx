@@ -1,4 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  RotateCcw,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { PortfolioItem } from '../types';
 import {
   getYouTubeFallbackThumbUrl,
@@ -687,14 +696,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               aria-label={isZoomed ? 'Zoom Out' : 'Zoom 4K View'}
               className="w-9 h-9 rounded-sm bg-charcoal hover:bg-panel border border-white/10 text-zinc-200 hover:text-zinc-100 text-xs flex items-center justify-center transition-colors duration-150 cursor-pointer"
             >
-              <i
-                aria-hidden="true"
-                className={
-                  isZoomed
-                    ? 'fa-solid fa-magnifying-glass-minus'
-                    : 'fa-solid fa-magnifying-glass-plus'
-                }
-              ></i>
+              {isZoomed ? (
+                <ZoomOut aria-hidden="true" className="w-4 h-4" />
+              ) : (
+                <ZoomIn aria-hidden="true" className="w-4 h-4" />
+              )}
             </button>
           )}
 
@@ -703,9 +709,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             onClick={onClose}
             title="Close (Esc)"
             aria-label="Close fullscreen viewer"
-            className="w-9 h-9 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-zinc-200 text-sm flex items-center justify-center transition-colors duration-150 cursor-pointer"
+            className="w-9 h-9 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-zinc-200 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i aria-hidden="true" className="fa-solid fa-xmark"></i>
+            <X aria-hidden="true" className="w-4 h-4" />
           </button>
         </div>
 
@@ -727,7 +733,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Previous view"
             className="absolute left-2 sm:left-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i aria-hidden="true" className="fa-solid fa-chevron-left text-xs"></i>
+            <ChevronLeft aria-hidden="true" className="w-4 h-4" />
           </button>
         )}
 
@@ -774,7 +780,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Next view"
             className="absolute right-2 sm:right-4 z-30 w-10 h-10 rounded-sm bg-obsidian/80 hover:bg-brass hover:text-obsidian text-zinc-200 border border-white/15 flex items-center justify-center transition-colors duration-150 cursor-pointer"
           >
-            <i aria-hidden="true" className="fa-solid fa-chevron-right text-xs"></i>
+            <ChevronRight aria-hidden="true" className="w-4 h-4" />
           </button>
         )}
 
@@ -788,7 +794,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
             aria-label="Reset zoom to default view"
             className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 z-30 px-2.5 py-1.5 rounded-sm bg-obsidian/85 hover:bg-brass hover:text-obsidian backdrop-blur-md border border-white/15 hover:border-brass text-xs font-medium text-zinc-200 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shadow-lg"
           >
-            <i aria-hidden="true" className="fa-solid fa-rotate-left text-[10px]"></i>
+            <RotateCcw aria-hidden="true" className="w-3 h-3" />
             <span>Reset Zoom</span>
           </button>
         )}
@@ -850,7 +856,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   )}
                   {thumbItem.type === 'video' && (
                     <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-zinc-100">
-                      <i aria-hidden="true" className="fa-solid fa-play text-[9px]"></i>
+                      <Play aria-hidden="true" className="w-3 h-3 fill-current" />
                     </span>
                   )}
                   <span
@@ -881,7 +887,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   }
                   className="px-3 py-1.5 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-xs font-medium text-zinc-200 transition-colors duration-150 whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
                 >
-                  <i aria-hidden="true" className="fa-solid fa-chevron-left text-[10px]"></i>
+                  <ChevronLeft aria-hidden="true" className="w-3.5 h-3.5" />
                   <span>Previous Project</span>
                 </button>
 
@@ -903,7 +909,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   className="px-3 py-1.5 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-xs font-medium text-zinc-200 transition-colors duration-150 whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>Next Project</span>
-                  <i aria-hidden="true" className="fa-solid fa-chevron-right text-[10px]"></i>
+                  <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}

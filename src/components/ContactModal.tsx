@@ -1,5 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowRight,
+  Check,
+  Copy,
+  ExternalLink,
+  Eye,
+  Mail,
+  X,
+} from 'lucide-react';
+import {
+  BehanceIcon,
+  FacebookIcon,
+  LinkedInIcon,
+  WhatsAppIcon,
+} from './BrandIcons';
+import {
   decodeDirectEmail,
   decodeDirectEmailHref,
   decodeDirectWhatsAppDisplay,
@@ -12,13 +27,14 @@ interface ContactModalProps {
   onShowToast?: (message: string, isWarning?: boolean) => void;
 }
 
+type SocialChannelId = 'linkedin' | 'facebook' | 'behance';
+
 interface SocialChannel {
-  id: string;
+  id: SocialChannelId;
   name: string;
   handle: string;
   description: string;
   href: string;
-  iconClass: string;
 }
 
 interface ProtectedChannel {
@@ -26,7 +42,6 @@ interface ProtectedChannel {
   name: string;
   maskedPrompt: string;
   description: string;
-  iconClass: string;
   external: boolean;
   openLabel: string;
 }
@@ -42,7 +57,6 @@ const PROTECTED_CHANNELS: ProtectedChannel[] = [
     name: 'Email',
     maskedPrompt: 'Click to reveal email address',
     description: 'Project inquiries & direct correspondence',
-    iconClass: 'fa-solid fa-envelope',
     external: false,
     openLabel: 'Compose',
   },
@@ -51,7 +65,6 @@ const PROTECTED_CHANNELS: ProtectedChannel[] = [
     name: 'WhatsApp',
     maskedPrompt: 'Click to reveal WhatsApp number',
     description: 'Direct chat & quick project discussions',
-    iconClass: 'fa-brands fa-whatsapp',
     external: true,
     openLabel: 'Open Chat',
   },
@@ -64,7 +77,6 @@ const SOCIAL_CHANNELS: SocialChannel[] = [
     handle: 'linkedin.com/in/ramihendi',
     description: 'Professional experience & network',
     href: 'https://www.linkedin.com/in/ramihendi/',
-    iconClass: 'fa-brands fa-linkedin-in',
   },
   {
     id: 'facebook',
@@ -72,7 +84,6 @@ const SOCIAL_CHANNELS: SocialChannel[] = [
     handle: 'facebook.com/ramihendi.artworks',
     description: 'Artworks & studio updates',
     href: 'https://www.facebook.com/ramihendi.artworks',
-    iconClass: 'fa-brands fa-facebook-f',
   },
   {
     id: 'behance',
@@ -80,9 +91,26 @@ const SOCIAL_CHANNELS: SocialChannel[] = [
     handle: 'behance.net/ramihendi',
     description: 'Visual case studies & selected works',
     href: 'https://www.behance.net/ramihendi',
-    iconClass: 'fa-brands fa-behance',
   },
 ];
+
+function renderProtectedChannelIcon(id: 'email' | 'whatsapp'): React.ReactElement {
+  if (id === 'whatsapp') {
+    return <WhatsAppIcon className="w-4 h-4" />;
+  }
+  return <Mail aria-hidden="true" className="w-4 h-4" />;
+}
+
+function renderSocialChannelIcon(id: SocialChannelId): React.ReactElement {
+  switch (id) {
+    case 'linkedin':
+      return <LinkedInIcon className="w-4 h-4" />;
+    case 'facebook':
+      return <FacebookIcon className="w-4 h-4" />;
+    case 'behance':
+      return <BehanceIcon className="w-4 h-4" />;
+  }
+}
 
 async function copyContactValue(value: string): Promise<boolean> {
   try {
@@ -215,9 +243,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
             onClick={onClose}
             title="Close (Esc)"
             aria-label="Close contact dialog"
-            className="w-9 h-9 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-zinc-200 text-sm flex items-center justify-center transition-colors duration-150 shrink-0 cursor-pointer"
+            className="w-9 h-9 rounded-sm bg-charcoal hover:bg-brass hover:text-obsidian border border-white/10 text-zinc-200 flex items-center justify-center transition-colors duration-150 shrink-0 cursor-pointer"
           >
-            <i aria-hidden="true" className="fa-solid fa-xmark"></i>
+            <X aria-hidden="true" className="w-4 h-4" />
           </button>
         </div>
 
@@ -234,7 +262,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                 >
                   <div className="flex items-center gap-4 min-w-0">
                     <div className="w-10 h-10 rounded-sm bg-charcoal group-hover:bg-brass/15 border border-white/[0.09] group-hover:border-brass/50 text-zinc-200 group-hover:text-brass flex items-center justify-center shrink-0 transition-colors duration-150">
-                      <i aria-hidden="true" className={`${channel.iconClass} text-base`}></i>
+                      {renderProtectedChannelIcon(channel.id)}
                     </div>
 
                     <div className="min-w-0">
@@ -254,9 +282,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
 
                   <span
                     aria-hidden="true"
-                    className="text-zinc-500 group-hover:text-brass transition-colors duration-150 shrink-0 text-xs"
+                    className="text-zinc-500 group-hover:text-brass transition-colors duration-150 shrink-0"
                   >
-                    <i className="fa-regular fa-eye"></i>
+                    <Eye className="w-3.5 h-3.5" />
                   </span>
                 </button>
               );
@@ -270,7 +298,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
               >
                 <div className="flex items-center gap-4 min-w-0">
                   <div className="w-10 h-10 rounded-sm bg-brass/15 border border-brass/50 text-brass flex items-center justify-center shrink-0">
-                    <i aria-hidden="true" className={`${channel.iconClass} text-base`}></i>
+                    {renderProtectedChannelIcon(channel.id)}
                   </div>
 
                   <div className="min-w-0">
@@ -293,10 +321,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                         : 'bg-obsidian hover:bg-panel border-white/15 text-zinc-200 hover:border-white/30'
                     }`}
                   >
-                    <i
-                      aria-hidden="true"
-                      className={`fa-solid ${isCopied ? 'fa-check' : 'fa-copy'} text-[11px]`}
-                    ></i>
+                    {isCopied ? (
+                      <Check aria-hidden="true" className="w-3 h-3" />
+                    ) : (
+                      <Copy aria-hidden="true" className="w-3 h-3" />
+                    )}
                     <span>{isCopied ? 'Copied' : 'Copy'}</span>
                   </button>
 
@@ -307,14 +336,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                     className="px-3 py-1.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150"
                   >
                     <span>{channel.openLabel}</span>
-                    <i
-                      aria-hidden="true"
-                      className={`${
-                        channel.external
-                          ? 'fa-solid fa-arrow-up-right-from-square'
-                          : 'fa-solid fa-arrow-right'
-                      } text-[10px]`}
-                    ></i>
+                    {channel.external ? (
+                      <ExternalLink aria-hidden="true" className="w-3 h-3" />
+                    ) : (
+                      <ArrowRight aria-hidden="true" className="w-3 h-3" />
+                    )}
                   </a>
                 </div>
               </div>
@@ -331,7 +357,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
             >
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-10 h-10 rounded-sm bg-charcoal group-hover:bg-brass/15 border border-white/[0.09] group-hover:border-brass/50 text-zinc-200 group-hover:text-brass flex items-center justify-center shrink-0 transition-colors duration-150">
-                  <i aria-hidden="true" className={`${channel.iconClass} text-base`}></i>
+                  {renderSocialChannelIcon(channel.id)}
                 </div>
 
                 <div className="min-w-0">
@@ -351,9 +377,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
 
               <span
                 aria-hidden="true"
-                className="text-zinc-500 group-hover:text-brass transform group-hover:translate-x-0.5 transition-all duration-150 shrink-0 text-xs"
+                className="text-zinc-500 group-hover:text-brass transform group-hover:translate-x-0.5 transition-all duration-150 shrink-0"
               >
-                <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                <ExternalLink className="w-3.5 h-3.5" />
               </span>
             </a>
           ))}

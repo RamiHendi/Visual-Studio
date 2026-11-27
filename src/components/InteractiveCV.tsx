@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Eye, FileDown, Printer } from 'lucide-react';
 import { CVElement, CVSection, CVRole, NavigationMetadata } from '../types';
 import { sanitizeHttpsUrl } from '../utils/urlSecurity';
 import {
   decodeDirectEmail,
   decodeDirectWhatsAppDisplay,
+  getMaskedDirectEmail,
+  getMaskedDirectPhone,
   maskEmailToken,
   maskPhoneToken,
 } from '../utils/contactPrivacy';
@@ -516,9 +519,9 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
                             title="Click to reveal email"
                             className="inline-flex items-center gap-1.5 font-mono text-xs text-brass/90 hover:text-brass transition-colors cursor-pointer"
                           >
-                            <i aria-hidden="true" className="fa-regular fa-eye text-[10px]"></i>
+                            <Eye aria-hidden="true" className="w-3 h-3 shrink-0" />
                             <span>
-                              {isProtectedEmail ? 'Reveal email' : maskEmailToken(token)}
+                              {isProtectedEmail ? getMaskedDirectEmail() : maskEmailToken(token)}
                             </span>
                           </button>
                         )
@@ -539,9 +542,9 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
                             title="Click to reveal phone number"
                             className="inline-flex items-center gap-1.5 font-mono text-xs text-brass/90 hover:text-brass transition-colors tabular-nums cursor-pointer"
                           >
-                            <i aria-hidden="true" className="fa-regular fa-eye text-[10px]"></i>
+                            <Eye aria-hidden="true" className="w-3 h-3 shrink-0" />
                             <span>
-                              {isProtectedPhone ? 'Reveal phone' : maskPhoneToken(token)}
+                              {isProtectedPhone ? getMaskedDirectPhone() : maskPhoneToken(token)}
                             </span>
                           </button>
                         )
@@ -570,7 +573,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
             onClick={() => window.print()}
             className="px-4 py-2.5 rounded-sm bg-transparent hover:bg-charcoal text-zinc-200 border border-white/15 hover:border-white/30 text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <i aria-hidden="true" className="fa-solid fa-print text-xs text-zinc-400"></i>
+            <Printer aria-hidden="true" className="w-3.5 h-3.5 text-zinc-400" />
             <span>Print View</span>
           </button>
 
@@ -582,7 +585,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
             onClick={handleExportPdf}
             className="px-5 py-2.5 rounded-sm bg-brass hover:bg-brassHover text-obsidian font-semibold text-xs sm:text-sm flex items-center gap-2 transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <i aria-hidden="true" className="fa-solid fa-file-arrow-down text-xs"></i>
+            <FileDown aria-hidden="true" className="w-3.5 h-3.5" />
             <span>Download PDF</span>
           </a>
         </div>

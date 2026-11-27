@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { User } from 'lucide-react';
 
 interface HeroProps {
   title: string;
@@ -21,7 +22,8 @@ const STUDIO_TOOLS = [
   'ArtCam',
 ];
 
-const HERO_PORTRAIT_SRC =
+const HERO_PORTRAIT_WEBP_SRC = './assets/aistudio/hero-portrait.webp';
+const HERO_PORTRAIT_PNG_SRC =
   './assets/aistudio/Realistic_Portrait_Cutout_on_Transparency_14d78153.png';
 
 export const Hero: React.FC<HeroProps> = React.memo(
@@ -134,32 +136,35 @@ export const Hero: React.FC<HeroProps> = React.memo(
                         className="absolute inset-0 bg-gradient-to-br from-charcoal/50 via-panel/40 to-transparent rounded-sm animate-pulse motion-reduce:animate-none"
                       />
                     )}
-                    <img
-                      ref={portraitImgRef}
-                      src={HERO_PORTRAIT_SRC}
-                      alt={`${title} — 3D Artist and Architectural Visualizer`}
-                      width={1086}
-                      height={1633}
-                      draggable={false}
-                      loading="eager"
-                      decoding="async"
-                      fetchPriority="high"
-                      onContextMenu={blockMediaAction}
-                      onDragStart={blockMediaAction}
-                      onLoad={() => setImgLoaded(true)}
-                      onError={() => {
-                        setHasError(true);
-                        setImgLoaded(true);
-                      }}
-                      className={`relative z-[1] w-full h-full object-contain object-bottom protected-img transition-opacity duration-500 ease-out ${
-                        imgLoaded ? 'opacity-100' : 'opacity-0'
-                      }`}
-                    />
+                    <picture className="relative z-[1] block w-full h-full">
+                      <source srcSet={HERO_PORTRAIT_WEBP_SRC} type="image/webp" />
+                      <img
+                        ref={portraitImgRef}
+                        src={HERO_PORTRAIT_PNG_SRC}
+                        alt={`${title} — 3D Artist and Architectural Visualizer`}
+                        width={920}
+                        height={1383}
+                        draggable={false}
+                        loading="eager"
+                        decoding="async"
+                        fetchPriority="high"
+                        onContextMenu={blockMediaAction}
+                        onDragStart={blockMediaAction}
+                        onLoad={() => setImgLoaded(true)}
+                        onError={() => {
+                          setHasError(true);
+                          setImgLoaded(true);
+                        }}
+                        className={`w-full h-full object-contain object-bottom protected-img transition-opacity duration-500 ease-out ${
+                          imgLoaded ? 'opacity-100' : 'opacity-0'
+                        }`}
+                      />
+                    </picture>
                   </>
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-charcoal via-panel/80 to-obsidian border border-white/[0.08] rounded-sm flex flex-col items-center justify-center gap-2.5 p-6 text-center">
                     <div className="w-12 h-12 rounded-sm border border-white/[0.1] bg-obsidian/70 flex items-center justify-center text-zinc-500">
-                      <i aria-hidden="true" className="fa-regular fa-user text-lg"></i>
+                      <User aria-hidden="true" className="w-5 h-5" />
                     </div>
                     <span className="font-display text-sm font-medium text-zinc-200">
                       {title}

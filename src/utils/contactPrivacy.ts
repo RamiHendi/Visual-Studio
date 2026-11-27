@@ -38,3 +38,11 @@ export function maskPhoneToken(phone: string): string {
   if (digits.length < 4) return 'Reveal phone';
   return `•••• ${digits.slice(-4)}`;
 }
+
+export function getMaskedDirectEmail(): string {
+  return maskEmailToken(decodeDirectEmail());
+}
+
+export function getMaskedDirectPhone(): string {
+  return maskPhoneToken(decodeDirectWhatsAppDisplay());
+}
