@@ -20,6 +20,7 @@ import {
   decodeDirectWhatsAppDisplay,
   decodeDirectWhatsAppHref,
 } from '../utils/contactPrivacy';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 interface ContactModalProps {
   isOpen: boolean;
@@ -146,6 +147,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   const [revealed, setRevealed] = useState<Partial<Record<'email' | 'whatsapp', RevealedDetail>>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useModalFocusTrap(isOpen, dialogRef);
 
   useEffect(() => {
     if (!isOpen) {
@@ -212,11 +216,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="contact-modal-title"
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-darkroom/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 bg-darkroom/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 focus:outline-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

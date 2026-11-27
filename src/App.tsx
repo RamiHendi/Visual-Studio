@@ -33,6 +33,7 @@ import {
 } from './utils/studioCache';
 import { sanitizeAppsScriptUrl, sanitizeStudioData } from './utils/urlSecurity';
 import { syncPageSeo } from './utils/seo';
+import { captureRuntimeError } from './utils/sentry';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StudioShowcase } from './components/StudioShowcase';
@@ -53,9 +54,9 @@ const ContactModal = lazy(() =>
 
 const LIVE_FETCH_TIMEOUT_MS = 45000;
 const SNAPSHOT_FETCH_TIMEOUT_MS = 8000;
-const VERSION_CHECK_TIMEOUT_MS = 8000;
-const AUTO_REVALIDATE_INTERVAL_MS = 60000;
-const VISIBILITY_REVALIDATE_COOLDOWN_MS = 20000;
+const VERSION_CHECK_TIMEOUT_MS = 15000;
+const AUTO_REVALIDATE_INTERVAL_MS = 300000;
+const VISIBILITY_REVALIDATE_COOLDOWN_MS = 90000;
 const STATIC_SNAPSHOT_URL = './studio-snapshot.json';
 
 const parseUpdatedAtMs = (updatedAt?: string): number => {
@@ -123,6 +124,9 @@ export const App: React.FC = () => {
   const isCheckingVersionRef = useRef<boolean>(false);
   const lastSyncTimeRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
+  const currentTabRef = useRef<MainTab>(currentTab);
+  const lightboxOpenRef = useRef<boolean>(false);
+  const lightboxPushedHistoryRef = useRef<boolean>(false);
 
   const [lightbox, setLightbox] = useState<{
     isOpen: boolean;
@@ -260,7 +264,7 @@ export const App: React.FC = () => {
             }
           }
         }
-      } catch {
+      } catch (err) {
         const wasReplacedOrUnmounted = controller.signal.aborted && !didTimeout;
         if (!wasReplacedOrUnmounted && isMountedRef.current) {
           if (attempt < 1) {
@@ -271,8 +275,15 @@ export const App: React.FC = () => {
                 loadData({ force: true, attempt: attempt + 1 });
               }
             }, 1500);
-          } else if (!hasLiveDataRef.current) {
-            setLoadError(true);
+          } else {
+            captureRuntimeError(err, {
+              source: 'studio-live-fetch',
+              didTimeout,
+              hadCachedData: hasLiveDataRef.current,
+            });
+            if (!hasLiveDataRef.current) {
+              setLoadError(true);
+            }
           }
         }
       } finally {
@@ -640,32 +651,85 @@ export const App: React.FC = () => {
     });
   }, [currentTab, activePortfolioCategory, activeLightboxProject, cvNav.category, allProjects]);
 
-  const handleSelectTab = useCallback((tab: MainTab) => {
-    setCurrentTab(tab);
+  useEffect(() => {
+    currentTabRef.current = currentTab;
+  }, [currentTab]);
+
+  useEffect(() => {
+    lightboxOpenRef.current = lightbox.isOpen;
+  }, [lightbox.isOpen]);
+
+  const clearShareQueryParams = useCallback(() => {
     try {
       const url = new URL(window.location.href);
-      if (tab === 'cv') {
-        url.searchParams.set('view', 'cv');
-      } else {
-        url.searchParams.delete('view');
+      let changed = false;
+      if (url.searchParams.has('work')) {
+        url.searchParams.delete('work');
+        changed = true;
       }
-      if (url.hash.toLowerCase() === '#cv') {
-        url.hash = '';
+      if (url.searchParams.has('project')) {
+        url.searchParams.delete('project');
+        changed = true;
       }
-      window.history.replaceState({}, '', url.toString());
+      if (changed) {
+        window.history.replaceState(window.history.state, '', url.toString());
+      }
     } catch {
       void 0;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (lightboxOpenRef.current) {
+        lightboxPushedHistoryRef.current = false;
+        setLightbox((prev) => ({ ...prev, isOpen: false }));
+        clearShareQueryParams();
+      }
+      const nextTab = getInitialTabFromUrl();
+      if (nextTab !== currentTabRef.current) {
+        setCurrentTab(nextTab);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [clearShareQueryParams]);
+
+  const handleSelectTab = useCallback((tab: MainTab) => {
+    const isTabChange = tab !== currentTabRef.current;
+    setCurrentTab(tab);
+    if (isTabChange) {
+      try {
+        const url = new URL(window.location.href);
+        if (tab === 'cv') {
+          url.searchParams.set('view', 'cv');
+        } else {
+          url.searchParams.delete('view');
+        }
+        if (url.hash.toLowerCase() === '#cv') {
+          url.hash = '';
+        }
+        window.history.pushState({ studioTab: tab }, '', url.toString());
+      } catch {
+        void 0;
+      }
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const handleExploreWorks = useCallback(() => {
-    setCurrentTab('portfolio');
+    if (currentTabRef.current !== 'portfolio') {
+      handleSelectTab('portfolio');
+      return;
+    }
     const showcase = document.getElementById('studio-showcase');
     if (showcase) {
       showcase.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  }, []);
+  }, [handleSelectTab]);
 
   const handleOpenContact = useCallback(() => {
     setIsContactOpen(true);
@@ -689,6 +753,18 @@ export const App: React.FC = () => {
     ) => {
       const resolvedList = projectList ?? allProjects;
       const resolvedIndex = typeof projectIndex === 'number' ? projectIndex : -1;
+      if (!lightboxOpenRef.current) {
+        try {
+          window.history.pushState(
+            { studioTab: currentTabRef.current, studioLightbox: true },
+            '',
+            window.location.href
+          );
+          lightboxPushedHistoryRef.current = true;
+        } catch {
+          lightboxPushedHistoryRef.current = false;
+        }
+      }
       setLightbox({
         isOpen: true,
         itemIndex,
@@ -703,24 +779,17 @@ export const App: React.FC = () => {
 
   const handleCloseLightbox = useCallback(() => {
     setLightbox((prev) => ({ ...prev, isOpen: false }));
-    try {
-      const url = new URL(window.location.href);
-      let changed = false;
-      if (url.searchParams.has('work')) {
-        url.searchParams.delete('work');
-        changed = true;
+    if (lightboxPushedHistoryRef.current) {
+      lightboxPushedHistoryRef.current = false;
+      try {
+        window.history.back();
+      } catch {
+        clearShareQueryParams();
       }
-      if (url.searchParams.has('project')) {
-        url.searchParams.delete('project');
-        changed = true;
-      }
-      if (changed) {
-        window.history.replaceState({}, '', url.toString());
-      }
-    } catch {
-      void 0;
+      return;
     }
-  }, []);
+    clearShareQueryParams();
+  }, [clearShareQueryParams]);
 
   const handleNavigateLightbox = useCallback((newIndex: number) => {
     setLightbox((prev) => ({ ...prev, itemIndex: newIndex }));

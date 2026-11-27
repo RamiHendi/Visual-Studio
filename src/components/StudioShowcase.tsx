@@ -184,13 +184,17 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
     }
   }, [clearSubCategoryTrigger]);
 
+  const isSearching = searchQuery.trim().length > 0;
+
   useEffect(() => {
     const trimmedQuery = searchQuery.trim();
     onNavigationChange?.({
       section: 'Portfolio',
-      category: resolvedActiveCategory
-        ? resolvedActiveCategory.replace(/_/g, ' ')
-        : undefined,
+      category: trimmedQuery
+        ? 'All Categories'
+        : resolvedActiveCategory
+          ? resolvedActiveCategory.replace(/_/g, ' ')
+          : undefined,
       subCategory: trimmedQuery ? `Search: "${trimmedQuery}"` : undefined,
     });
   }, [resolvedActiveCategory, searchQuery, onNavigationChange]);
@@ -198,6 +202,11 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   const activeCategoryEntry = useMemo(
     () => categoryEntries.find((entry) => entry.category === resolvedActiveCategory) || null,
     [categoryEntries, resolvedActiveCategory]
+  );
+
+  const allCategoryProjects = useMemo(
+    () => categoryEntries.flatMap((entry) => entry.projects),
+    [categoryEntries]
   );
 
   const activeCategoryTotal = activeCategoryEntry?.projects.length || 0;
@@ -209,13 +218,15 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
   }, [categoryEntries]);
 
   const filteredProjects: PortfolioProject[] = useMemo(() => {
-    if (!activeCategoryEntry) return [];
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return activeCategoryEntry.projects;
+    if (!query) {
+      return activeCategoryEntry?.projects || [];
+    }
 
-    return activeCategoryEntry.projects.filter(
+    return allCategoryProjects.filter(
       (project) =>
         project.name.toLowerCase().includes(query) ||
+        project.category.replace(/_/g, ' ').toLowerCase().includes(query) ||
         project.category.toLowerCase().includes(query) ||
         (project.description && project.description.toLowerCase().includes(query)) ||
         project.items.some(
@@ -224,7 +235,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
             (item.description && item.description.toLowerCase().includes(query))
         )
     );
-  }, [activeCategoryEntry, searchQuery]);
+  }, [activeCategoryEntry, allCategoryProjects, searchQuery]);
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
@@ -410,7 +421,11 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
           </h2>
         </div>
         <p className="font-mono text-xs text-zinc-400 tabular-nums">
-          Showing {filteredProjects.length} of {activeCategoryTotal} {unitLabel}
+          {isSearching
+            ? `Showing ${filteredProjects.length} ${
+                filteredProjects.length === 1 ? 'match' : 'matches'
+              } across all categories`
+            : `Showing ${filteredProjects.length} of ${activeCategoryTotal} ${unitLabel}`}
         </p>
       </div>
 
@@ -420,7 +435,10 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
             <select
               aria-label="Filter projects by category"
               value={resolvedActiveCategory}
-              onChange={(e) => setActiveCategory(e.target.value)}
+              onChange={(e) => {
+                setActiveCategory(e.target.value);
+                if (searchQuery) setSearchQuery('');
+              }}
               className="w-full h-11 pl-3.5 pr-12 bg-charcoal border border-white/15 focus:border-brass rounded-sm text-sm font-medium text-zinc-100 appearance-none cursor-pointer focus:outline-none transition-colors"
             >
               {categoryEntries.map((entry) => {
@@ -453,14 +471,17 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
         >
           {categoryEntries.map((entry) => {
             const count = entry.projects.length;
-            const isActive = resolvedActiveCategory === entry.category;
+            const isActive = !isSearching && resolvedActiveCategory === entry.category;
             const displayName = entry.category.replace(/_/g, ' ');
             return (
               <button
                 type="button"
                 key={entry.category}
                 aria-pressed={isActive}
-                onClick={() => setActiveCategory(entry.category)}
+                onClick={() => {
+                  setActiveCategory(entry.category);
+                  if (searchQuery) setSearchQuery('');
+                }}
                 className={`h-9 px-3.5 rounded-sm text-xs font-medium transition-colors duration-150 flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
                   isActive
                     ? 'bg-brass text-obsidian font-semibold'
@@ -534,7 +555,7 @@ export const StudioShowcase: React.FC<StudioShowcaseProps> = ({
       ) : (
         <div className="space-y-8">
           <div
-            key={resolvedActiveCategory}
+            key={isSearching ? 'search-results' : resolvedActiveCategory}
             className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
           >
             {visibleProjects.map((project, idx) => {

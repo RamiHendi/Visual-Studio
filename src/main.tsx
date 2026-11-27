@@ -2,14 +2,22 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import {
+  captureRuntimeError,
+  getReactRootErrorCallbacks,
+  initSentry,
+} from './utils/sentry';
 import './index.css';
 import './print.css';
+
+initSentry();
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   registerSW({
     immediate: true,
-    onRegisterError() {
-      void 0;
+    onRegisterError(error) {
+      captureRuntimeError(error, { source: 'pwa-service-worker' });
     },
   });
 }
@@ -17,9 +25,11 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 const rootElement = document.getElementById('root');
 
 if (rootElement) {
-  ReactDOM.createRoot(rootElement).render(
+  ReactDOM.createRoot(rootElement, getReactRootErrorCallbacks()).render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </React.StrictMode>
   );
 }

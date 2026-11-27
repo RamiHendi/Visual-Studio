@@ -1,13 +1,24 @@
-import { defineConfig } from 'vite';
+import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+function tightenProductionCsp(): Plugin {
+  return {
+    name: 'tighten-production-csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(/\s+ws:\s+wss:/g, '');
+    },
+  };
+}
 
 export default defineConfig({
   base: './',
   plugins: [
     react(),
     tailwindcss(),
+    tightenProductionCsp(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: [
@@ -122,8 +133,23 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('/scheduler/')
+            ) {
+              return 'react-vendor';
+            }
+            if (id.includes('/lucide-react/')) {
+              return 'icons-vendor';
+            }
+            if (id.includes('/@sentry/')) {
+              return 'sentry-vendor';
+            }
+          }
+          return undefined;
         },
       },
     },

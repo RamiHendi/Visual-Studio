@@ -14,6 +14,7 @@ import {
   sanitizeMediaImageUrl,
   sanitizeVideoEmbedUrl,
 } from '../utils/urlSecurity';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 type SlideDirection = 'next' | 'prev' | 'fade';
 
@@ -65,8 +66,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const [exitingSlide, setExitingSlide] = useState<ActiveSlide | null>(null);
   const [isTransitioningImage, setIsTransitioningImage] = useState<boolean>(false);
 
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const zoomWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useModalFocusTrap(isOpen, dialogRef);
   const panRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragStateRef = useRef<{
     pointerId: number;
@@ -653,12 +657,14 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={dialogLabel}
       onContextMenu={blockMediaAction}
       onDragStart={blockMediaAction}
-      className="fixed inset-0 z-50 bg-darkroom/98 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 protected-media"
+      className="fixed inset-0 z-50 bg-darkroom/98 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6 protected-media focus:outline-none"
     >
       <div className="relative flex items-center justify-between gap-4 z-20 pb-3 border-b border-white/[0.08]">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs min-w-0">
