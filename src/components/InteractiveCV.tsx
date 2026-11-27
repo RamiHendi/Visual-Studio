@@ -462,7 +462,7 @@ export const InteractiveCV: React.FC<InteractiveCVProps> = ({
 
   const eyebrowText = headerSubtitle
     ? `Rami Hendi · ${headerSubtitle}`
-    : 'Rami Hendi · 3D Artist (Generalist) · 10+ Years of Experience';
+    : 'Rami Hendi · 3D Artist (Generalist) · 15+ Years of Experience';
 
   return (
     <section aria-labelledby="cv-page-heading" className="cv-print-root space-y-12 pt-2 sm:pt-6">

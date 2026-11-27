@@ -726,7 +726,7 @@ export const App: React.FC = () => {
       !rawSubtitle ||
       rawSubtitle ===
         'Senior 3D Visualizer, Architectural Renderer & Technical Artist | 6+ Years Experience'
-        ? '3D Artist (Generalist) | 10+ Years of Experience'
+        ? '3D Artist (Generalist) | 15+ Years of Experience'
         : rawSubtitle;
 
     return {

@@ -9,7 +9,7 @@ export const DEMO_STUDIO_DATA: StudioData = {
   cvPdfUrl: 'https://docs.google.com/document/d/DEMO_DOC_ID/export?format=pdf',
   cv: [
     { kind: 'paragraph', heading: 'TITLE', text: 'Rami Hendi' },
-    { kind: 'paragraph', heading: 'SUBTITLE', text: '3D Artist (Generalist) | 10+ Years of Experience' },
+    { kind: 'paragraph', heading: 'SUBTITLE', text: '3D Artist (Generalist) | 15+ Years of Experience' },
     { kind: 'paragraph', heading: 'HEADING1', text: 'Executive Summary & Studio Profile' },
     {
       kind: 'paragraph',

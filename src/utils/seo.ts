@@ -11,9 +11,9 @@ export interface DynamicSeoPayload {
 const SITE_NAME = "Rami Hendi's Visual Studio";
 const DEFAULT_TITLE = "Rami Hendi's Visual Studio – 3D Artist & ArchViz Portfolio";
 const DEFAULT_DESCRIPTION =
-  "Explore Rami Hendi's Visual Studio: photorealistic 3D architectural visualization, industrial design, CGI rendering, and interactive CV with 10+ years of experience.";
+  "Explore Rami Hendi's Visual Studio: photorealistic 3D architectural visualization, industrial design, CGI rendering, and interactive CV with 15+ years of experience.";
 const CV_DESCRIPTION =
-  "Curriculum Vitae of Rami Hendi, 3D Artist (Generalist) with 10+ years of experience in architectural visualization, industrial design, 3ds Max, V-Ray, Blender, and CAD.";
+  "Curriculum Vitae of Rami Hendi, 3D Artist (Generalist) with 15+ years of experience in architectural visualization, industrial design, 3ds Max, V-Ray, Blender, and CAD.";
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string): void {
   let el = document.head.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
